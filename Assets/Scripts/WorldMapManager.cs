@@ -34,6 +34,11 @@ namespace FrostboundFrontier
             public int beast_max_hp;
             public string reward_type;
             public int reward_amount;
+            public string facility_key;
+            public int facility_power;
+            public string owner_alliance_id;
+            public string buff_type;
+            public float buff_percent;
             public string updated_at;
         }
         [Serializable] private sealed class WorldTileRows { public WorldTileRow[] items; }
@@ -101,6 +106,7 @@ namespace FrostboundFrontier
         private bool alliancePlacementConfirmationOpen;
         private bool alliancePlacementPending;
         private Vector2Int alliancePlacementCoordinate = new Vector2Int(-1, -1);
+        private string alliancePlacementType = "HQ";
         private bool cinematicZoomActive;
         private float cinematicZoomStartedAt;
         private float cinematicStartZoom;
@@ -263,6 +269,16 @@ namespace FrostboundFrontier
 
         public void BeginAllianceHQPlacement()
         {
+            BeginAllianceStructurePlacement("HQ");
+        }
+
+        public void BeginAllianceFlagPlacement()
+        {
+            BeginAllianceStructurePlacement("Flag");
+        }
+
+        private void BeginAllianceStructurePlacement(string structureType)
+        {
             if (!AllianceManager.CanBuildTerritory)
             {
                 actionMessage = "SOLO LÍDERES U OFICIALES PUEDEN CONSTRUIR";
@@ -273,10 +289,17 @@ namespace FrostboundFrontier
             ResetRelocationStateSilently();
             ClearSelection();
             alliancePlacementMode = true;
+            alliancePlacementType = structureType;
             Vector2Int city = GetCityCoordinate();
             SetAlliancePlacementCandidate(Mathf.Clamp(city.x + 3, 0, MapSize - 1), city.y);
-            actionMessage = "TOCA UNA TILE VACÍA PARA DESPLEGAR EL HQ";
+            actionMessage = structureType == "Flag" ? "TOCA UNA TILE VACÍA CONECTADA AL TERRITORIO" : "TOCA UNA TILE VACÍA PARA DESPLEGAR EL HQ";
             actionMessageUntil = Time.unscaledTime + 5f;
+        }
+
+        public void ForceWorldRefresh()
+        {
+            loadedChunk = new Vector2Int(int.MinValue, int.MinValue);
+            if (IsWorldMapActive) RefreshChunkIfNeeded();
         }
 
         private bool IsMaximumZoomOut => mapCamera != null && mapCamera.orthographicSize >= WorldMaxZoom - 0.25f;
@@ -884,13 +907,14 @@ namespace FrostboundFrontier
             if (alliancePlacementPending || !IsAlliancePlacementValid()) return;
             alliancePlacementPending = true;
             Vector2Int target = alliancePlacementCoordinate;
-            StartCoroutine(SupabaseSyncClient.Instance.PlaceAllianceStructure("HQ", target.x, target.y, row =>
+            string structureType = alliancePlacementType;
+            StartCoroutine(SupabaseSyncClient.Instance.PlaceAllianceStructure(structureType, target.x, target.y, row =>
             {
                 alliancePlacementPending = false;
                 alliancePlacementMode = false;
                 alliancePlacementConfirmationOpen = false;
                 ClearSelection();
-                actionMessage = "HQ DE ALIANZA ACTIVO · TERRITORIO RADIO " + row.territory_radius;
+                actionMessage = row.structure_type + " DE ALIANZA ACTIVO · TERRITORIO RADIO " + row.territory_radius;
                 actionMessageUntil = Time.unscaledTime + 5f;
                 loadedChunk = new Vector2Int(int.MinValue, int.MinValue);
                 RefreshChunkIfNeeded();
@@ -1191,20 +1215,20 @@ namespace FrostboundFrontier
             if (guiEvent.type == EventType.MouseDown && controls.Contains(guiEvent.mousePosition)) selectionPanelPointerCaptured = true;
             GUI.Box(new Rect(controls.x, controls.y, controls.width, 72f), GUIContent.none, bodyStyle);
             GUI.Label(new Rect(width * .5f - 150f, height - 157f, 300f, 28f),
-                "HQ  X:" + alliancePlacementCoordinate.x + "  Y:" + alliancePlacementCoordinate.y, coordinateStyle);
+                alliancePlacementType.ToUpperInvariant() + "  X:" + alliancePlacementCoordinate.x + "  Y:" + alliancePlacementCoordinate.y, coordinateStyle);
             GUIStyle cancelStyle = new GUIStyle(buttonStyle) { normal = { background = orangeButton } };
             if (GUI.Button(new Rect(width * .5f - 292f, height - 126f, 220f, 54f), "CANCELAR", cancelStyle)) CancelAlliancePlacement();
             GUI.enabled = valid && !alliancePlacementPending;
-            if (GUI.Button(new Rect(width * .5f + 72f, height - 126f, 220f, 54f), valid ? "CONSTRUIR HQ" : "TILE OCUPADA", buttonStyle))
+            if (GUI.Button(new Rect(width * .5f + 72f, height - 126f, 220f, 54f), valid ? "CONSTRUIR " + alliancePlacementType.ToUpperInvariant() : "TILE OCUPADA", buttonStyle))
                 alliancePlacementConfirmationOpen = true;
             GUI.enabled = true;
             if (!alliancePlacementConfirmationOpen) return;
             Rect modal = new Rect(width * .5f - 235f, height * .5f - 105f, 470f, 210f);
             if (guiEvent.type == EventType.MouseDown && modal.Contains(guiEvent.mousePosition)) selectionPanelPointerCaptured = true;
             GUI.DrawTexture(modal, cardPanel);
-            GUI.Label(new Rect(modal.x + 32f, modal.y + 24f, modal.width - 64f, 42f), "¿DESPLEGAR HQ DE ALIANZA?", cardTitleStyle);
+            GUI.Label(new Rect(modal.x + 32f, modal.y + 24f, modal.width - 64f, 42f), "¿DESPLEGAR " + alliancePlacementType.ToUpperInvariant() + " DE ALIANZA?", cardTitleStyle);
             GUI.Label(new Rect(modal.x + 34f, modal.y + 72f, modal.width - 68f, 48f),
-                "Se reclamará un territorio cuadrado de radio 5 alrededor de X:" + alliancePlacementCoordinate.x + " Y:" + alliancePlacementCoordinate.y, cardBodyStyle);
+                (alliancePlacementType == "Flag" ? "Debe conectarse al territorio actual. Expandirá radio 3" : "Se reclamará un territorio cuadrado de radio 5") + " alrededor de X:" + alliancePlacementCoordinate.x + " Y:" + alliancePlacementCoordinate.y, cardBodyStyle);
             if (GUI.Button(new Rect(modal.x + 28f, modal.y + 138f, 190f, 48f), "VOLVER", cancelStyle)) alliancePlacementConfirmationOpen = false;
             if (GUI.Button(new Rect(modal.x + 252f, modal.y + 138f, 190f, 48f), alliancePlacementPending ? "CONSTRUYENDO..." : "CONFIRMAR", buttonStyle)) ConfirmAlliancePlacement();
         }
@@ -1228,13 +1252,18 @@ namespace FrostboundFrontier
             GUI.DrawTexture(panel, cardPanel);
             GUI.DrawTexture(new Rect(panel.x + 18f, panel.y + 18f, panel.width - 36f, 116f), cardPreview);
             GUI.Label(new Rect(panel.x + 34f, panel.y + 88f, 210f, 36f), "X:" + selectedCoordinate.x + "  Y:" + selectedCoordinate.y, cardCoordinateStyle);
-            GUI.Label(new Rect(panel.x + 82f, panel.y + 36f, 326f, 44f), type == "Beast" ? BeastName(visual.data.beast_kind, level) : PreviewSymbol(type, visual?.data?.res_type), cardTitleStyle);
+            string previewTitle = type == "Beast" ? BeastName(visual.data.beast_kind, level) :
+                type == "Fortress" ? FacilityName(visual.data.facility_key) : PreviewSymbol(type, visual?.data?.res_type);
+            GUI.Label(new Rect(panel.x + 82f, panel.y + 36f, 326f, 44f), previewTitle, cardTitleStyle);
             if (GUI.Button(new Rect(panel.x + panel.width - 54f, panel.y + 10f, 38f, 38f), "×", buttonStyle)) ClearSelection();
 
             GUI.Label(new Rect(panel.x + 30f, panel.y + 140f, panel.width - 60f, 40f), TileLabel(type), cardTitleStyle);
             GUI.DrawTexture(new Rect(panel.x + 24f, panel.y + 184f, panel.width - 48f, 62f), cardInfo);
             GUI.Label(new Rect(panel.x + 42f, panel.y + 190f, 410f, 52f), type == "ResourceNode" ? "CAPACIDAD  " + Mathf.Max(0, visual.data.res_remaining) + " / " + Mathf.Max(0, visual.data.res_capacity) + "  ·  NIVEL " + level
                 : type == "Beast" ? "NIVEL " + level + "  ·  PODER RECOMENDADO " + visual.data.beast_power + "\nRECOMPENSA  " + visual.data.reward_amount + " " + RewardLabel(visual.data.reward_type)
+                : type == "Fortress" ? "GUARNICIÓN  " + visual.data.facility_power + " PODER  ·  NIVEL " + level + "\n" +
+                    (string.IsNullOrEmpty(visual.data.owner_alliance_id) ? "NEUTRAL" : "CONQUISTADA") + "  ·  BUFF +" + visual.data.buff_percent + "% " +
+                    (visual.data.buff_type == "AllianceAttack" ? "ATAQUE" : "PRODUCCIÓN")
                 : "OCUPADO POR  " + occupant + "  ·  NIVEL " + level, cardBodyStyle);
 
             float actionY = panel.y + 266f;
@@ -1242,7 +1271,7 @@ namespace FrostboundFrontier
             {
                 int available = Mathf.Max(0, prototype.SnowInfantry);
                 troopsToSend = Mathf.Clamp(troopsToSend, 1, Mathf.Max(1, available));
-                int combatPower = Mathf.CeilToInt(troopsToSend * 20f * (assignElena && prototype.ElenaUnlocked ? 1.15f : 1f) * ResearchManager.CombatPowerMultiplier);
+                int combatPower = Mathf.CeilToInt(troopsToSend * 20f * (assignElena && prototype.ElenaUnlocked ? 1.15f : 1f) * ResearchManager.CombatPowerMultiplier * AllianceManager.AttackMultiplier);
                 string stat = type == "ResourceNode" ? "CARGA " + (troopsToSend * LoadPerSnowInfantry) : "PODER " + combatPower;
                 GUI.Label(new Rect(panel.x + 28f, panel.y + 252f, 295f, 42f), "TROPAS " + troopsToSend + "  ·  " + stat, cardBodyStyle);
                 if (GUI.Button(new Rect(panel.x + 340f, panel.y + 250f, 48f, 42f), "−", buttonStyle)) troopsToSend = Mathf.Max(1, troopsToSend - 1);
@@ -1252,7 +1281,7 @@ namespace FrostboundFrontier
                     assignElena = !assignElena && prototype.ElenaUnlocked;
                 actionY = panel.y + 374f;
             }
-            string action = type == "Empty" ? "OCUPAR" : type == "ResourceNode" ? "RECOLECTAR" : "ATACAR";
+            string action = type == "Empty" ? "OCUPAR" : type == "ResourceNode" ? "RECOLECTAR" : type == "Fortress" ? "SOLO CON RALLY" : "ATACAR";
             string leftAction = rallyTarget && AllianceManager.HasAlliance ? "RALLY · 5 MIN" : "REUBICAR";
             if (GUI.Button(new Rect(panel.x + 24f, actionY, 210f, 56f), leftAction, buttonStyle))
             {
@@ -1266,6 +1295,7 @@ namespace FrostboundFrontier
                     BeginRelocation();
             }
             GUIStyle actionStyle = action == "ATACAR" ? new GUIStyle(buttonStyle) { normal = { background = orangeButton } } : buttonStyle;
+            GUI.enabled = type != "Fortress";
             if (GUI.Button(new Rect(panel.x + 256f, actionY, 210f, 56f), action, actionStyle))
             {
                 if (type == "ResourceNode") StartGatheringMarch(visual);
@@ -1276,6 +1306,7 @@ namespace FrostboundFrontier
                     actionMessageUntil = Time.unscaledTime + 3f;
                 }
             }
+            GUI.enabled = true;
         }
 
         private void DrawBattleReport(float width, float height)
@@ -1297,12 +1328,19 @@ namespace FrostboundFrontier
             return "CAMPOS DE HIELO";
         }
 
+        private static string FacilityName(string key)
+        {
+            if (key == "RegionalThermalStation") return "ESTACIÓN TÉRMICA REGIONAL";
+            if (key == "GlacialHuntingPost") return "PUESTO DE CAZA GLACIAL";
+            return "INSTALACIÓN NEUTRAL";
+        }
+
         private static string TileLabel(string type)
         {
             if (type == "PlayerCity") return "CIUDAD";
             if (type == "ResourceNode") return "NODO DE RECOLECCIÓN";
             if (type == "Beast") return "BESTIA";
-            if (type == "Fortress") return "FORTALEZA";
+            if (type == "Fortress") return "INSTALACIÓN / BASTIÓN";
             return "TERRENO VACÍO";
         }
 

@@ -664,8 +664,8 @@ namespace FrostboundFrontier
                 state.heat = Mathf.Max(0, state.heat - 2);
             }
 
-            woodProductionCarry += state.sawmillWorkers * state.sawmillLevel * 2f * ResearchManager.WoodProductionMultiplier;
-            foodProductionCarry += state.kitchenWorkers * state.kitchenLevel * 2f * ResearchManager.FoodProductionMultiplier;
+            woodProductionCarry += state.sawmillWorkers * state.sawmillLevel * 2f * ResearchManager.WoodProductionMultiplier * AllianceManager.ResourceProductionMultiplier;
+            foodProductionCarry += state.kitchenWorkers * state.kitchenLevel * 2f * ResearchManager.FoodProductionMultiplier * AllianceManager.ResourceProductionMultiplier;
             int producedWood = Mathf.FloorToInt(woodProductionCarry);
             int producedFood = Mathf.FloorToInt(foodProductionCarry);
             state.wood += producedWood; state.food += producedFood;

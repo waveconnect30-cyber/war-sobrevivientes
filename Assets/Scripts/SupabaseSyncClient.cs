@@ -211,11 +211,30 @@ namespace FrostboundFrontier
             public string departure_time;
             public string arrival_time;
         }
+        [Serializable] public sealed class AllianceBuffCloudState
+        {
+            public float resource_bonus;
+            public float attack_bonus;
+            public int facility_count;
+        }
+        [Serializable] public sealed class FacilityRallyResult
+        {
+            public string rally_id;
+            public bool victory;
+            public int combined_power;
+            public int defense_power;
+            public int member_count;
+            public string facility_key;
+            public string buff_type;
+            public float buff_percent;
+            public string alliance_id;
+        }
         [Serializable] private sealed class AllianceStructureRows { public AllianceStructureCloudState[] items; }
         [Serializable] private sealed class RallyRows { public RallyCloudState[] items; }
         [Serializable] private sealed class PlaceStructureRequest { public string p_structure_type; public int p_x; public int p_y; }
         [Serializable] private sealed class CreateRallyRequest { public int p_target_x; public int p_target_y; public string p_target_type; public int p_troop_count; }
         [Serializable] private sealed class JoinRallyRequest { public string p_rally_id; public int p_troop_count; }
+        [Serializable] private sealed class ProcessFacilityRallyRequest { public string p_rally_id; }
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSceneLoad)]
         private static void Install()
@@ -259,7 +278,7 @@ namespace FrostboundFrontier
                 yield break;
             }
 
-            string path = "/rest/v1/frostbound_world_tiles?select=id,x,y,tile_type,occupant_id,level,res_type,res_capacity,res_remaining,beast_kind,beast_power,beast_hp,beast_max_hp,reward_type,reward_amount,updated_at" +
+            string path = "/rest/v1/frostbound_world_tiles?select=id,x,y,tile_type,occupant_id,level,res_type,res_capacity,res_remaining,beast_kind,beast_power,beast_hp,beast_max_hp,reward_type,reward_amount,facility_key,facility_power,owner_alliance_id,buff_type,buff_percent,updated_at" +
                 "&x=gte." + minX + "&x=lte." + maxX + "&y=gte." + minY + "&y=lte." + maxY +
                 "&order=x.asc,y.asc";
             using UnityWebRequest request = CreateRequest(path, UnityWebRequest.kHttpVerbGET, null, true);
@@ -477,6 +496,25 @@ namespace FrostboundFrontier
             yield return request.SendWebRequest();
             if (IsSuccess(request)) onSuccess?.Invoke(JsonUtility.FromJson<RallyJoinCloudState>(request.downloadHandler.text));
             else onError?.Invoke("Unirse al rally " + request.responseCode + ": " + SafeError(request));
+        }
+
+        public IEnumerator FetchAllianceBuffs(Action<AllianceBuffCloudState> onSuccess, Action<string> onError)
+        {
+            if (!HasSession) { onError?.Invoke("Sin sesión de Supabase"); yield break; }
+            using UnityWebRequest request = CreateRequest("/rest/v1/rpc/frostbound_get_my_alliance_buffs", UnityWebRequest.kHttpVerbPOST, "{}", true);
+            yield return request.SendWebRequest();
+            if (IsSuccess(request)) onSuccess?.Invoke(JsonUtility.FromJson<AllianceBuffCloudState>(request.downloadHandler.text));
+            else onError?.Invoke("Buffs de alianza " + request.responseCode + ": " + SafeError(request));
+        }
+
+        public IEnumerator ProcessFacilityRally(string rallyId, Action<FacilityRallyResult> onSuccess, Action<string> onError)
+        {
+            if (!HasSession) { onError?.Invoke("Sin sesión de Supabase"); yield break; }
+            ProcessFacilityRallyRequest payload = new ProcessFacilityRallyRequest { p_rally_id = rallyId };
+            using UnityWebRequest request = CreateRequest("/rest/v1/rpc/frostbound_process_facility_rally", UnityWebRequest.kHttpVerbPOST, JsonUtility.ToJson(payload), true);
+            yield return request.SendWebRequest();
+            if (IsSuccess(request)) onSuccess?.Invoke(JsonUtility.FromJson<FacilityRallyResult>(request.downloadHandler.text));
+            else onError?.Invoke("Batalla de instalación " + request.responseCode + ": " + SafeError(request));
         }
 
         public IEnumerator FetchResearch(Action<ResearchCloudState[]> onSuccess, Action<string> onError)
