@@ -16,6 +16,7 @@ namespace FrostboundFrontier
         // Ten additional 1.6-unit steps beyond the previous far limit (22).
         private const float WorldMaxZoom = 38f;
         private const float ZoomButtonStep = 1.6f;
+        private const float HighDetailZoomLimit = 14f;
 
         [Serializable] private sealed class WorldTileRow
         {
@@ -51,6 +52,7 @@ namespace FrostboundFrontier
             public GameObject root;
             public GameObject marker;
             public WorldTileRow data;
+            public string markerSignature;
         }
 
         [Serializable] private sealed class LocalMarch
@@ -81,11 +83,16 @@ namespace FrostboundFrontier
         public static bool IsWorldMapActive { get; private set; }
 
         private readonly Dictionary<Vector2Int, TileVisual> visibleTiles = new Dictionary<Vector2Int, TileVisual>();
+        private readonly Dictionary<PrimitiveType, GameObjectPool> markerPools = new Dictionary<PrimitiveType, GameObjectPool>();
+        private readonly Dictionary<GameObject, PrimitiveType> markerTypes = new Dictionary<GameObject, PrimitiveType>();
         private FrostboundFrontierPrototype prototype;
         private Camera mapCamera;
         private GameObject mapRoot;
         private GameObject worldBackdrop;
         private GameObject allianceTerritoryRoot;
+        private GameObject poolRoot;
+        private GameObjectPool tilePool;
+        private GameObjectPool marchPool;
         private Vector3 colonyCameraPosition;
         private Quaternion colonyCameraRotation;
         private bool colonyOrthographic;
@@ -96,6 +103,7 @@ namespace FrostboundFrontier
         private Vector2Int loadedChunk = new Vector2Int(int.MinValue, int.MinValue);
         private int loadedRadiusX = -1;
         private int loadedRadiusY = -1;
+        private bool loadedHighDetail;
         private Vector2 pointerDown;
         private Vector3 cameraDown;
         private bool pointerTracking;
@@ -176,6 +184,11 @@ namespace FrostboundFrontier
             mapCamera = prototype.WorldCamera;
             mapRoot = new GameObject("Virtual World Map Chunks");
             mapRoot.SetActive(false);
+            poolRoot = new GameObject("World Visual Pool");
+            poolRoot.transform.SetParent(mapRoot.transform, false);
+            poolRoot.SetActive(false);
+            tilePool = new GameObjectPool(CreatePooledTile, poolRoot.transform);
+            marchPool = new GameObjectPool(CreatePooledMarch, poolRoot.transform);
             allianceTerritoryRoot = new GameObject("Alliance Territory Overlays");
             allianceTerritoryRoot.transform.SetParent(mapRoot.transform, false);
             CreateMaterials();
@@ -196,12 +209,15 @@ namespace FrostboundFrontier
             if (cinematicZoomActive) UpdateCinematicZoom();
             else HandleMapCamera();
             RefreshChunkIfNeeded();
+            UpdateDynamicCulling();
             if (selectionHighlight != null)
             {
                 float pulse = 1f + Mathf.Sin(Time.unscaledTime * 4.5f) * 0.045f;
                 selectionHighlight.transform.localScale = new Vector3(pulse, 1f, pulse);
             }
         }
+
+        private bool HighDetailActive => mapCamera != null && mapCamera.orthographicSize <= HighDetailZoomLimit;
 
         private void ToggleWorldMap()
         {
@@ -364,7 +380,7 @@ namespace FrostboundFrontier
             mapCamera.transform.position += new Vector3(keyboardX, 0f, keyboardY) * (12f * Time.unscaledDeltaTime);
 
             Vector2 pointer = Input.touchCount > 0 ? Input.GetTouch(0).position : (Vector2)Input.mousePosition;
-            bool pressed = Input.touchCount > 0 || Input.GetMouseButton(0);
+            bool pressed = Input.touchCount == 1 || Input.GetMouseButton(0);
             // OnGUI processes the release after Update. Once a press begins on the
             // card, keep the world input disabled through the complete click so the
             // tile below it can never receive the same release event.
@@ -390,7 +406,7 @@ namespace FrostboundFrontier
                 return;
             }
             Rect viewport = mapCamera.pixelRect;
-            if (pressed && viewport.Contains(pointer) && pointer.y > 95f && pointer.y < Screen.height - 80f && !IsPointerOverSelectionCard(pointer))
+            if (pressed && viewport.Contains(pointer) && Screen.safeArea.Contains(pointer) && pointer.y > Screen.safeArea.yMin + 80f && pointer.y < Screen.safeArea.yMax - 80f && !IsPointerOverSelectionCard(pointer) && !MobilePerformanceManager.IsPointerOverUi(pointer))
             {
                 if (!pointerTracking)
                 {
@@ -413,6 +429,7 @@ namespace FrostboundFrontier
             float zoom = -Input.mouseScrollDelta.y;
             if (Input.touchCount == 2)
             {
+                pointerTracking = false;
                 Touch a = Input.GetTouch(0);
                 Touch b = Input.GetTouch(1);
                 float previous = ((a.position - a.deltaPosition) - (b.position - b.deltaPosition)).magnitude;
@@ -428,12 +445,33 @@ namespace FrostboundFrontier
             mapCamera.transform.position = p;
         }
 
+        private void UpdateDynamicCulling()
+        {
+            float halfX = mapCamera.orthographicSize * mapCamera.aspect + TileSize;
+            float halfY = mapCamera.orthographicSize + TileSize;
+            Vector3 cameraPosition = mapCamera.transform.position;
+            foreach (TileVisual visual in visibleTiles.Values)
+            {
+                Vector3 position = CoordinateToWorld(visual.data.x, visual.data.y);
+                bool visible = Mathf.Abs(position.x - cameraPosition.x) <= halfX && Mathf.Abs(position.z - cameraPosition.z) <= halfY;
+                if (visual.root != null && visual.root.activeSelf != visible) visual.root.SetActive(visible);
+                if (visual.root == null && visual.marker != null && visual.marker.activeSelf != visible) visual.marker.SetActive(visible);
+            }
+            if (marchVisual != null)
+            {
+                Vector3 position = marchVisual.transform.position;
+                bool visible = Mathf.Abs(position.x - cameraPosition.x) <= halfX && Mathf.Abs(position.z - cameraPosition.z) <= halfY;
+                marchVisual.SetActive(IsWorldMapActive && visible);
+            }
+        }
+
         private bool IsPointerOverSelectionCard(Vector2 screenPointer)
         {
-            float scale = Mathf.Clamp(Screen.width / 1280f, 0.75f, 1.35f);
-            float logicalWidth = Screen.width / scale;
-            float logicalHeight = Screen.height / scale;
-            Vector2 guiPoint = new Vector2(screenPointer.x / scale, (Screen.height - screenPointer.y) / scale);
+            Rect safe = Screen.safeArea;
+            float scale = Mathf.Clamp(safe.width / 1280f, 0.75f, 1.35f);
+            float logicalWidth = safe.width / scale;
+            float logicalHeight = safe.height / scale;
+            Vector2 guiPoint = new Vector2((screenPointer.x - safe.x) / scale, (safe.yMax - screenPointer.y) / scale);
             if (relocationMode)
             {
                 if (new Rect(logicalWidth * 0.5f - 310f, logicalHeight - 166f, 620f, 94f).Contains(guiPoint)) return true;
@@ -461,13 +499,16 @@ namespace FrostboundFrontier
             Vector2Int chunk = new Vector2Int(center.x / ChunkSize, center.y / ChunkSize);
             int radiusX = Mathf.Max(MinimumRadius, Mathf.CeilToInt(mapCamera.orthographicSize * mapCamera.aspect / TileSize) + 2);
             int radiusY = Mathf.Max(MinimumRadius, Mathf.CeilToInt(mapCamera.orthographicSize / TileSize) + 2);
+            bool highDetail = HighDetailActive;
             // Zooming changes the visible bounds even while the camera remains in
             // the same chunk. Rebuild when either radius changes so the detailed
             // terrain always fills the viewport instead of remaining a tiny island.
-            if (chunk == loadedChunk && radiusX == loadedRadiusX && radiusY == loadedRadiusY) return;
+            if (chunk == loadedChunk && radiusX == loadedRadiusX && radiusY == loadedRadiusY && highDetail == loadedHighDetail) return;
+            if (highDetail != loadedHighDetail) ReleaseAllVisibleTiles();
             loadedChunk = chunk;
             loadedRadiusX = radiusX;
             loadedRadiusY = radiusY;
+            loadedHighDetail = highDetail;
 
             int minX = Mathf.Max(0, center.x - radiusX);
             int maxX = Mathf.Min(MapSize - 1, center.x + radiusX);
@@ -533,7 +574,7 @@ namespace FrostboundFrontier
                     remove.Add(pair.Key);
             foreach (Vector2Int key in remove)
             {
-                Destroy(visibleTiles[key].root);
+                ReleaseTile(visibleTiles[key]);
                 visibleTiles.Remove(key);
             }
 
@@ -547,15 +588,14 @@ namespace FrostboundFrontier
 
         private TileVisual CreateTile(int x, int y)
         {
-            GameObject tile = GameObject.CreatePrimitive(PrimitiveType.Cube);
-            tile.name = "Sector " + x + "," + y;
-            tile.transform.SetParent(mapRoot.transform, false);
-            tile.transform.position = CoordinateToWorld(x, y);
-            tile.transform.localScale = new Vector3(TileSize * 0.94f, 0.08f, TileSize * 0.94f);
-            Renderer renderer = tile.GetComponent<Renderer>();
-            renderer.sharedMaterial = ((x + y) & 1) == 0 ? snowA : snowB;
-            renderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
-            renderer.receiveShadows = false;
+            GameObject tile = null;
+            if (HighDetailActive)
+            {
+                tile = tilePool.Get(mapRoot.transform);
+                tile.name = "Sector " + x + "," + y;
+                tile.transform.position = CoordinateToWorld(x, y);
+                tile.GetComponent<Renderer>().sharedMaterial = ((x + y) & 1) == 0 ? snowA : snowB;
+            }
             TileVisual visual = new TileVisual { root = tile, data = new WorldTileRow { x = x, y = y, tile_type = "Empty", level = 1 } };
             Vector2Int city = GetCityCoordinate();
             if (x == city.x && y == city.y)
@@ -617,19 +657,21 @@ namespace FrostboundFrontier
 
         private void UpdateMarker(TileVisual visual)
         {
-            if (visual.marker != null) Destroy(visual.marker);
+            bool detailed = HighDetailActive;
+            string signature = visual.data.tile_type + ":" + detailed + ":" + IsFuture(visual.data.peace_shield_until) + ":" + IsFuture(visual.data.burning_until);
+            if (visual.marker != null && visual.markerSignature == signature) return;
+            ReleaseMarker(visual);
             if (visual.data.tile_type == "Empty") return;
 
             PrimitiveType shape = visual.data.tile_type == "PlayerCity" || visual.data.tile_type == "Fortress"
                 ? PrimitiveType.Cube : visual.data.tile_type == "ResourceNode" ? PrimitiveType.Cylinder : PrimitiveType.Capsule;
-            GameObject marker = GameObject.CreatePrimitive(shape);
+            GameObject marker = GetMarkerPool(shape).Get(visual.root != null ? visual.root.transform : mapRoot.transform);
             marker.name = visual.data.tile_type;
-            marker.transform.SetParent(visual.root.transform, false);
-            marker.transform.localPosition = new Vector3(0f, 1.6f, 0f);
-            float size = visual.data.tile_type == "Fortress" ? 0.85f : 0.58f;
-            marker.transform.localScale = new Vector3(size, visual.data.tile_type == "PlayerCity" ? 2.2f : 1.35f, size);
+            marker.transform.position = CoordinateToWorld(visual.data.x, visual.data.y) + new Vector3(0f, detailed ? 1.6f : .32f, 0f);
+            float size = detailed ? (visual.data.tile_type == "Fortress" ? 0.85f : 0.58f) : .22f;
+            marker.transform.localScale = detailed ? new Vector3(size, visual.data.tile_type == "PlayerCity" ? 2.2f : 1.35f, size) : new Vector3(size, .08f, size);
             marker.GetComponent<Renderer>().sharedMaterial = MaterialFor(visual.data.tile_type);
-            if (visual.data.tile_type == "PlayerCity")
+            if (detailed && visual.data.tile_type == "PlayerCity")
             {
                 if (IsFuture(visual.data.peace_shield_until))
                 {
@@ -641,6 +683,58 @@ namespace FrostboundFrontier
                 }
             }
             visual.marker = marker;
+            visual.markerSignature = signature;
+        }
+
+        private GameObject CreatePooledTile()
+        {
+            GameObject tile = GameObject.CreatePrimitive(PrimitiveType.Cube);
+            tile.transform.localScale = new Vector3(TileSize * .94f, .08f, TileSize * .94f);
+            Renderer renderer = tile.GetComponent<Renderer>();
+            renderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+            renderer.receiveShadows = false;
+            return tile;
+        }
+
+        private GameObjectPool GetMarkerPool(PrimitiveType shape)
+        {
+            if (markerPools.TryGetValue(shape, out GameObjectPool pool)) return pool;
+            pool = new GameObjectPool(() =>
+            {
+                GameObject marker = GameObject.CreatePrimitive(shape);
+                markerTypes[marker] = shape;
+                Renderer renderer = marker.GetComponent<Renderer>();
+                renderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+                renderer.receiveShadows = false;
+                return marker;
+            }, poolRoot.transform);
+            markerPools.Add(shape, pool);
+            return pool;
+        }
+
+        private void ReleaseMarker(TileVisual visual)
+        {
+            if (visual?.marker == null) return;
+            for (int i = visual.marker.transform.childCount - 1; i >= 0; i--)
+                Destroy(visual.marker.transform.GetChild(i).gameObject);
+            if (markerTypes.TryGetValue(visual.marker, out PrimitiveType shape)) GetMarkerPool(shape).Release(visual.marker);
+            else visual.marker.SetActive(false);
+            visual.marker = null;
+            visual.markerSignature = null;
+        }
+
+        private void ReleaseTile(TileVisual visual)
+        {
+            if (visual == null) return;
+            ReleaseMarker(visual);
+            if (visual.root != null) tilePool.Release(visual.root);
+            visual.root = null;
+        }
+
+        private void ReleaseAllVisibleTiles()
+        {
+            foreach (TileVisual visual in visibleTiles.Values) ReleaseTile(visual);
+            visibleTiles.Clear();
         }
 
         private static bool IsFuture(string value)=>!string.IsNullOrWhiteSpace(value)&&DateTime.TryParse(value,out DateTime date)&&date.ToUniversalTime()>DateTime.UtcNow;
@@ -821,7 +915,7 @@ namespace FrostboundFrontier
             actionMessageUntil = Time.unscaledTime + 4f;
             activeMarch = null;
             PlayerPrefs.DeleteKey("frostbound-active-march");
-            if (marchVisual != null) marchVisual.SetActive(false);
+            ReleaseMarchVisual();
             loadedChunk = new Vector2Int(int.MinValue, int.MinValue);
             RefreshChunkIfNeeded();
         }
@@ -838,7 +932,7 @@ namespace FrostboundFrontier
             SaveActiveMarch();
             activeMarch = null;
             PlayerPrefs.DeleteKey("frostbound-active-march");
-            if (marchVisual != null) marchVisual.SetActive(false);
+            ReleaseMarchVisual();
             loadedChunk = new Vector2Int(int.MinValue, int.MinValue);
             RefreshChunkIfNeeded();
         }
@@ -851,18 +945,30 @@ namespace FrostboundFrontier
             SaveActiveMarch();
             activeMarch = null;
             PlayerPrefs.DeleteKey("frostbound-active-march");
-            if (marchVisual != null) marchVisual.SetActive(false);
+            ReleaseMarchVisual();
         }
 
         private void EnsureMarchVisual()
         {
             if (marchVisual != null || mapRoot == null) return;
-            marchVisual = GameObject.CreatePrimitive(PrimitiveType.Capsule);
-            marchVisual.name = "Gathering March";
-            marchVisual.transform.SetParent(mapRoot.transform, false);
-            marchVisual.transform.localScale = new Vector3(0.22f, 0.25f, 0.22f);
-            marchVisual.GetComponent<Renderer>().sharedMaterial = cityMaterial;
-            Destroy(marchVisual.GetComponent<Collider>());
+            marchVisual = marchPool.Get(mapRoot.transform);
+        }
+
+        private GameObject CreatePooledMarch()
+        {
+            GameObject visual = GameObject.CreatePrimitive(PrimitiveType.Capsule);
+            visual.name = "World March";
+            visual.transform.localScale = new Vector3(0.22f, 0.25f, 0.22f);
+            visual.GetComponent<Renderer>().sharedMaterial = cityMaterial;
+            Destroy(visual.GetComponent<Collider>());
+            return visual;
+        }
+
+        private void ReleaseMarchVisual()
+        {
+            if (marchVisual == null) return;
+            marchPool.Release(marchVisual);
+            marchVisual = null;
         }
 
         private void SaveActiveMarch(Action onSaved=null)
@@ -1151,11 +1257,12 @@ namespace FrostboundFrontier
             GUI.depth = 100;
             EnsureStyles();
             if (AllianceManager.IsPanelOpen || ResearchManager.IsPanelOpen || QuestMailManager.IsPanelOpen || InventoryShopManager.IsPanelOpen) return;
-            float scale = Mathf.Clamp(Screen.width / 1280f, 0.75f, 1.35f);
+            Rect safe = Screen.safeArea;
+            float scale = Mathf.Clamp(safe.width / 1280f, 0.75f, 1.35f);
             Matrix4x4 previousMatrix = GUI.matrix;
-            GUI.matrix = Matrix4x4.TRS(Vector3.zero, Quaternion.identity, Vector3.one * scale);
-            float width = Screen.width / scale;
-            float height = Screen.height / scale;
+            GUI.matrix = Matrix4x4.TRS(new Vector3(safe.x, Screen.height - safe.yMax, 0f), Quaternion.identity, Vector3.one * scale);
+            float width = safe.width / scale;
+            float height = safe.height / scale;
 
             if (!IsWorldMapActive)
             {
@@ -1169,6 +1276,7 @@ namespace FrostboundFrontier
             Vector2Int center = CameraCoordinate();
             GUI.Label(new Rect(width * 0.5f - 110f, 28f, 220f, 38f), "CENTRO  X " + center.x + " · Y " + center.y, coordinateStyle);
             GUI.Label(new Rect(width - 330f, 28f, 290f, 38f), mapStatus, coordinateStyle);
+            GUI.Label(new Rect(width * .5f - 105f, 62f, 210f, 24f), HighDetailActive ? "LOD ALTO · MODELOS 3D" : "LOD BAJO · VISTA ESTRATÉGICA", bodyStyle);
 
             GUI.Box(new Rect(18f, height - 82f, width - 36f, 64f), GUIContent.none, bodyStyle);
             GUI.Label(new Rect(38f, height - 72f, 620f, 26f), "ORIGEN (0,0)  ·  X → DERECHA  ·  Y ↑ ARRIBA  ·  FINAL (1199,1199)", coordinateStyle);

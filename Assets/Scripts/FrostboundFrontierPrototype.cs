@@ -140,7 +140,7 @@ namespace FrostboundFrontier
 
         private void Awake()
         {
-            Application.targetFrameRate = 60;
+            Application.targetFrameRate = PlayerPrefs.GetInt("frostbound-mobile-fps", 60) <= 30 ? 30 : 60;
             Screen.orientation = ScreenOrientation.LandscapeLeft;
             Load();
             BuildWorld();
