@@ -781,6 +781,7 @@ namespace FrostboundFrontier
             battleReportBody = "Tropas enviadas: " + march.troopCount + "\nBajas: " + march.casualties +
                 "   Heridos: " + march.wounded + "\nBotín: " + (march.lootAmount > 0 ? march.lootAmount + " " + RewardLabel(march.lootType) : "Ninguno");
             battleReportOpen = true;
+            QuestMailManager.Instance?.AddBattleReport("beast_" + march.id, "Combate PVE: " + battleReportTitle, battleReportBody);
             march.status = "Completed";
             SaveActiveMarch();
             activeMarch = null;
@@ -1097,7 +1098,7 @@ namespace FrostboundFrontier
         {
             GUI.depth = 100;
             EnsureStyles();
-            if (AllianceManager.IsPanelOpen || ResearchManager.IsPanelOpen) return;
+            if (AllianceManager.IsPanelOpen || ResearchManager.IsPanelOpen || QuestMailManager.IsPanelOpen) return;
             float scale = Mathf.Clamp(Screen.width / 1280f, 0.75f, 1.35f);
             Matrix4x4 previousMatrix = GUI.matrix;
             GUI.matrix = Matrix4x4.TRS(Vector3.zero, Quaternion.identity, Vector3.one * scale);

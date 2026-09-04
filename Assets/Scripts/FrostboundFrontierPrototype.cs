@@ -354,7 +354,7 @@ namespace FrostboundFrontier
             DrawResource(new Rect(width - 370f, 27f, 145f, 38f), "COMIDA", state.food, new Color(0.48f, 0.82f, 0.4f));
             DrawResource(new Rect(width - 210f, 27f, 150f, 38f), "LIBRES", AvailableWorkers(), new Color(0.45f, 0.78f, 1f));
 
-            if (AllianceManager.IsPanelOpen || ResearchManager.IsPanelOpen)
+            if (AllianceManager.IsPanelOpen || ResearchManager.IsPanelOpen || QuestMailManager.IsPanelOpen)
             {
                 GUI.matrix = oldMatrix;
                 return;
@@ -486,6 +486,7 @@ namespace FrostboundFrontier
             state.trainingStartedUtcTicks = 0;
             state.trainingEndsUtcTicks = 0;
             Save();
+            QuestMailManager.Instance?.RecordProgress("TrainTroops", completed);
             ShowToast(completed + " Infantería de Nieve lista");
         }
 
@@ -629,6 +630,7 @@ namespace FrostboundFrontier
             state.upgradeStartedUtcTicks = 0;
             state.upgradeEndsUtcTicks = 0;
             ShowToast(BuildingName(completed) + " alcanzó nivel " + GetLevel(completed));
+            if (completed == "generator") QuestMailManager.Instance?.RecordProgress("GeneratorLevel", state.generatorLevel);
             CheckTutorial();
             Save();
         }
@@ -855,6 +857,7 @@ namespace FrostboundFrontier
             else if (resourceType == "Coal") state.coal += amount;
             else return;
             Save();
+            if (resourceType == "Wood") QuestMailManager.Instance?.RecordProgress("GatherWood", amount);
             ShowToast("Marcha regresó con " + amount + " de " + resourceType);
         }
 
@@ -882,6 +885,18 @@ namespace FrostboundFrontier
             else if (lootType == "Crystals") state.crystals += Mathf.Max(0, lootAmount);
             else if (lootType == "Speedups") state.speedups += Mathf.Max(0, lootAmount);
             Save();
+            if (lootAmount > 0) QuestMailManager.Instance?.RecordProgress("DefeatBeast", 1);
+        }
+
+        public void ApplyClaimedRewards(int wood, int food, int crystals, int speedups)
+        {
+            if (state == null) return;
+            state.wood += Mathf.Max(0, wood);
+            state.food += Mathf.Max(0, food);
+            state.crystals += Mathf.Max(0, crystals);
+            state.speedups += Mathf.Max(0, speedups);
+            Save();
+            ShowToast("Recompensa acreditada");
         }
 
         public void ApplyHeroCloudState(SupabaseSyncClient.HeroCloudState hero)

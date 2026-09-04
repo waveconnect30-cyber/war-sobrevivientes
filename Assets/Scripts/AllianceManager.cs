@@ -116,7 +116,7 @@ namespace FrostboundFrontier
 
         private void OnGUI()
         {
-            if (ResearchManager.IsPanelOpen) return;
+            if (ResearchManager.IsPanelOpen || QuestMailManager.IsPanelOpen) return;
             EnsureStyles();
             int previousDepth = GUI.depth;
             GUI.depth = 100;
@@ -242,6 +242,14 @@ namespace FrostboundFrontier
                     ? "¡INSTALACIÓN CONQUISTADA! +" + result.buff_percent + "% " + (result.buff_type == "AllianceAttack" ? "ATAQUE" : "PRODUCCIÓN")
                     : "Rally derrotado: " + result.combined_power + " / " + result.defense_power + " de poder.";
                 RefreshRallies(); RefreshBuffs();
+                if (result.victory)
+                {
+                    QuestMailManager.Instance?.RecordProgress("FacilityConquest", 1);
+                    QuestMailManager.Instance?.AddBattleReport("facility_" + rallyId, "Rally de instalación: Victoria",
+                        "Poder aliado " + result.combined_power + " contra defensa " + result.defense_power + ". Buff conquistado: +" + result.buff_percent + "%.");
+                }
+                else QuestMailManager.Instance?.AddBattleReport("facility_" + rallyId, "Rally de instalación: Derrota",
+                    "Poder aliado " + result.combined_power + " contra defensa " + result.defense_power + ".");
                 FindAnyObjectByType<WorldMapManager>()?.ForceWorldRefresh();
             }, error => { busy = false; message = error; }));
         }

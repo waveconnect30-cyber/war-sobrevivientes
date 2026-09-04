@@ -103,7 +103,7 @@ namespace FrostboundFrontier
 
         private void OnGUI()
         {
-            if (AllianceManager.IsPanelOpen) return;
+            if (AllianceManager.IsPanelOpen || QuestMailManager.IsPanelOpen) return;
             EnsureStyles(); GUI.depth=-200;
             float scale=Mathf.Clamp(Screen.width/1280f,.75f,1.35f); Matrix4x4 old=GUI.matrix;
             GUI.matrix=Matrix4x4.TRS(Vector3.zero,Quaternion.identity,Vector3.one*scale);

@@ -229,6 +229,37 @@ namespace FrostboundFrontier
             public float buff_percent;
             public string alliance_id;
         }
+        [Serializable] public sealed class QuestCloudState
+        {
+            public string id; public string quest_key; public string title; public string objective_type;
+            public int target_amount; public int progress; public int points;
+            public int reward_wood; public int reward_food; public int reward_crystals; public int reward_speedups;
+            public string claimed_at;
+        }
+        [Serializable] public sealed class AchievementCloudState
+        {
+            public string id; public string achievement_key; public string title; public string objective_type;
+            public int target_amount; public int progress;
+            public int reward_wood; public int reward_food; public int reward_crystals; public int reward_speedups;
+            public string claimed_at;
+        }
+        [Serializable] public sealed class MailCloudState
+        {
+            public string id; public string category; public string subject; public string body; public string source_key;
+            public int reward_wood; public int reward_food; public int reward_crystals; public int reward_speedups;
+            public string read_at; public string claimed_at; public string created_at;
+        }
+        [Serializable] public sealed class RewardCloudState
+        {
+            public int claimed_count; public int wood; public int food; public int crystals; public int speedups;
+        }
+        [Serializable] private sealed class QuestRows { public QuestCloudState[] items; }
+        [Serializable] private sealed class AchievementRows { public AchievementCloudState[] items; }
+        [Serializable] private sealed class MailRows { public MailCloudState[] items; }
+        [Serializable] private sealed class ObjectiveRequest { public string p_objective_type; public int p_amount; }
+        [Serializable] private sealed class IdRequest { public string p_quest_id; public string p_achievement_id; public string p_mail_id; }
+        [Serializable] private sealed class ChestRequest { public int p_milestone; }
+        [Serializable] private sealed class BattleMailRequest { public string p_source_key; public string p_subject; public string p_body; }
         [Serializable] private sealed class AllianceStructureRows { public AllianceStructureCloudState[] items; }
         [Serializable] private sealed class RallyRows { public RallyCloudState[] items; }
         [Serializable] private sealed class PlaceStructureRequest { public string p_structure_type; public int p_x; public int p_y; }
@@ -515,6 +546,95 @@ namespace FrostboundFrontier
             yield return request.SendWebRequest();
             if (IsSuccess(request)) onSuccess?.Invoke(JsonUtility.FromJson<FacilityRallyResult>(request.downloadHandler.text));
             else onError?.Invoke("Batalla de instalación " + request.responseCode + ": " + SafeError(request));
+        }
+
+        public IEnumerator InitializeHito11(Action onSuccess, Action<string> onError)
+        {
+            yield return CallSimpleRpc("frostbound_initialize_hito11", "{}", onSuccess, onError);
+        }
+
+        public IEnumerator FetchDailyQuests(Action<QuestCloudState[]> onSuccess, Action<string> onError)
+        {
+            if (!HasSession) { onError?.Invoke("Sin sesión de Supabase"); yield break; }
+            string path = "/rest/v1/frostbound_quests?select=id,quest_key,title,objective_type,target_amount,progress,points,reward_wood,reward_food,reward_crystals,reward_speedups,claimed_at&quest_date=eq." + DateTime.UtcNow.ToString("yyyy-MM-dd") + "&order=quest_key";
+            using UnityWebRequest request = CreateRequest(path, UnityWebRequest.kHttpVerbGET, null, true);
+            yield return request.SendWebRequest();
+            if (IsSuccess(request)) onSuccess?.Invoke(ParseArray<QuestRows>(request.downloadHandler.text)?.items ?? Array.Empty<QuestCloudState>());
+            else onError?.Invoke("Misiones " + request.responseCode + ": " + SafeError(request));
+        }
+
+        public IEnumerator FetchAchievements(Action<AchievementCloudState[]> onSuccess, Action<string> onError)
+        {
+            if (!HasSession) { onError?.Invoke("Sin sesión de Supabase"); yield break; }
+            using UnityWebRequest request = CreateRequest("/rest/v1/frostbound_achievements?select=id,achievement_key,title,objective_type,target_amount,progress,reward_wood,reward_food,reward_crystals,reward_speedups,claimed_at&order=achievement_key", UnityWebRequest.kHttpVerbGET, null, true);
+            yield return request.SendWebRequest();
+            if (IsSuccess(request)) onSuccess?.Invoke(ParseArray<AchievementRows>(request.downloadHandler.text)?.items ?? Array.Empty<AchievementCloudState>());
+            else onError?.Invoke("Logros " + request.responseCode + ": " + SafeError(request));
+        }
+
+        public IEnumerator FetchMail(string category, Action<MailCloudState[]> onSuccess, Action<string> onError)
+        {
+            if (!HasSession) { onError?.Invoke("Sin sesión de Supabase"); yield break; }
+            string path = "/rest/v1/frostbound_mail?select=id,category,subject,body,source_key,reward_wood,reward_food,reward_crystals,reward_speedups,read_at,claimed_at,created_at&category=eq." + UnityWebRequest.EscapeURL(category) + "&order=created_at.desc&limit=30";
+            using UnityWebRequest request = CreateRequest(path, UnityWebRequest.kHttpVerbGET, null, true);
+            yield return request.SendWebRequest();
+            if (IsSuccess(request)) onSuccess?.Invoke(ParseArray<MailRows>(request.downloadHandler.text)?.items ?? Array.Empty<MailCloudState>());
+            else onError?.Invoke("Correo " + request.responseCode + ": " + SafeError(request));
+        }
+
+        public IEnumerator RecordQuestProgress(string objective, int amount, Action onSuccess = null)
+        {
+            ObjectiveRequest payload = new ObjectiveRequest { p_objective_type = objective, p_amount = amount };
+            yield return CallSimpleRpc("frostbound_record_progress", JsonUtility.ToJson(payload), onSuccess, error => Debug.LogWarning(error));
+        }
+
+        public IEnumerator ClaimQuest(string id, Action<RewardCloudState> onSuccess, Action<string> onError)
+        {
+            yield return CallRewardRpc("frostbound_claim_quest", JsonUtility.ToJson(new IdRequest { p_quest_id = id }), onSuccess, onError);
+        }
+
+        public IEnumerator ClaimAchievement(string id, Action<RewardCloudState> onSuccess, Action<string> onError)
+        {
+            yield return CallRewardRpc("frostbound_claim_achievement", JsonUtility.ToJson(new IdRequest { p_achievement_id = id }), onSuccess, onError);
+        }
+
+        public IEnumerator ClaimDailyChest(int milestone, Action<RewardCloudState> onSuccess, Action<string> onError)
+        {
+            yield return CallRewardRpc("frostbound_claim_daily_chest", JsonUtility.ToJson(new ChestRequest { p_milestone = milestone }), onSuccess, onError);
+        }
+
+        public IEnumerator ClaimAllMail(Action<RewardCloudState> onSuccess, Action<string> onError)
+        {
+            yield return CallRewardRpc("frostbound_claim_all_mail", "{}", onSuccess, onError);
+        }
+
+        public IEnumerator MarkMailRead(string id, Action onSuccess = null)
+        {
+            yield return CallSimpleRpc("frostbound_mark_mail_read", JsonUtility.ToJson(new IdRequest { p_mail_id = id }), onSuccess, error => Debug.LogWarning(error));
+        }
+
+        public IEnumerator AddBattleMail(string sourceKey, string subject, string body)
+        {
+            BattleMailRequest payload = new BattleMailRequest { p_source_key = sourceKey, p_subject = subject, p_body = body };
+            yield return CallSimpleRpc("frostbound_add_battle_mail", JsonUtility.ToJson(payload), null, error => Debug.LogWarning(error));
+        }
+
+        private IEnumerator CallRewardRpc(string rpc, string json, Action<RewardCloudState> onSuccess, Action<string> onError)
+        {
+            if (!HasSession) { onError?.Invoke("Sin sesión de Supabase"); yield break; }
+            using UnityWebRequest request = CreateRequest("/rest/v1/rpc/" + rpc, UnityWebRequest.kHttpVerbPOST, json, true);
+            yield return request.SendWebRequest();
+            if (IsSuccess(request)) onSuccess?.Invoke(JsonUtility.FromJson<RewardCloudState>(request.downloadHandler.text));
+            else onError?.Invoke("Recompensa " + request.responseCode + ": " + SafeError(request));
+        }
+
+        private IEnumerator CallSimpleRpc(string rpc, string json, Action onSuccess, Action<string> onError)
+        {
+            if (!HasSession) { onError?.Invoke("Sin sesión de Supabase"); yield break; }
+            using UnityWebRequest request = CreateRequest("/rest/v1/rpc/" + rpc, UnityWebRequest.kHttpVerbPOST, json, true);
+            yield return request.SendWebRequest();
+            if (IsSuccess(request)) onSuccess?.Invoke();
+            else onError?.Invoke(rpc + " " + request.responseCode + ": " + SafeError(request));
         }
 
         public IEnumerator FetchResearch(Action<ResearchCloudState[]> onSuccess, Action<string> onError)
