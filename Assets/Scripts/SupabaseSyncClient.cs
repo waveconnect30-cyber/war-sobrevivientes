@@ -48,6 +48,8 @@ namespace FrostboundFrontier
             public long power;
             public long client_saved_at;
             public int snow_infantry;
+            public int snow_lancers;
+            public int snow_marksmen;
             public long crystals;
             public int speedups;
         }
@@ -65,6 +67,8 @@ namespace FrostboundFrontier
             public long power;
             public long client_saved_at;
             public int snow_infantry;
+            public int snow_lancers;
+            public int snow_marksmen;
             public long crystals;
             public int speedups;
         }
@@ -265,6 +269,11 @@ namespace FrostboundFrontier
         [Serializable] public sealed class ItemActionResult { public string item_id; public int quantity; public int honor_points; public int seconds_applied; public string target_type; public int donated; public string resource; public string peace_shield_until; }
         [Serializable] public sealed class CityAttackResult { public bool victory; public int attacker_power; public int defender_power; public int attacker_casualties; public int defender_casualties; public int defender_wounded; public int loot_wood; public int loot_food; public int loot_coal; public int city_health; public bool burning; public bool relocated; public int new_x; public int new_y; }
         [Serializable] public sealed class TutorialProgressState { public string user_id; public int step; public bool completed; public string updated_at; }
+        [Serializable] public sealed class Hito16State { public int common_keys; public int epic_keys; public int highest_stage; public int hero_xp; public string idle_claimed_at; }
+        [Serializable] public sealed class AdvancedHeroState { public string id; public string hero_id; public string hero_key; public string hero_type; public string rarity; public int level; public int star_level; public int shards_count; public bool is_new; public int shards_awarded; public int common_keys; public int epic_keys; }
+        [Serializable] public sealed class ExpeditionBattleState { public bool victory; public int stage; public int team_power; public int enemy_power; public int wood; public int food; public int hero_xp; }
+        [Serializable] public sealed class ExpeditionIdleState { public int wood; public int food; public int hero_xp; public int seconds; public int highest_stage; }
+        [Serializable] private sealed class AdvancedHeroRows { public AdvancedHeroState[] items; }
         [Serializable] private sealed class TutorialProgressRows { public TutorialProgressState[] items; }
         [Serializable] private sealed class InventoryRows { public InventoryRow[] items; }
         [Serializable] private sealed class ShopRows { public ShopRow[] items; }
@@ -346,6 +355,61 @@ namespace FrostboundFrontier
             using UnityWebRequest request = CreateUpsert("/rest/v1/frostbound_tutorial_progress?on_conflict=user_id", JsonUtility.ToJson(payload));
             yield return request.SendWebRequest();
             if (IsSuccess(request)) onSuccess?.Invoke(); else onError?.Invoke("Tutorial " + request.responseCode + ": " + SafeError(request));
+        }
+
+        public IEnumerator InitializeHito16(Action<Hito16State> onSuccess, Action<string> onError)
+        {
+            yield return CallHito16Rpc("frostbound_initialize_hito16", "{}", onSuccess, onError);
+        }
+
+        public IEnumerator FetchAdvancedHeroes(Action<AdvancedHeroState[]> onSuccess, Action<string> onError)
+        {
+            if (!HasSession) { onError?.Invoke("Sin sesión de Supabase"); yield break; }
+            string path = "/rest/v1/frostbound_heroes?select=id,hero_key,hero_type,rarity,level,star_level,shards_count&user_id=eq." + userId + "&order=rarity.desc,hero_key";
+            using UnityWebRequest request = CreateRequest(path, UnityWebRequest.kHttpVerbGET, null, true);
+            yield return request.SendWebRequest();
+            if (!IsSuccess(request)) { onError?.Invoke("Héroes " + request.responseCode + ": " + SafeError(request)); yield break; }
+            AdvancedHeroRows rows = ParseArray<AdvancedHeroRows>(request.downloadHandler.text);
+            onSuccess?.Invoke(rows?.items ?? Array.Empty<AdvancedHeroState>());
+        }
+
+        public IEnumerator RecruitHero(string keyType, Action<AdvancedHeroState> onSuccess, Action<string> onError)
+        {
+            if (!HasSession) { onError?.Invoke("Sin sesión de Supabase"); yield break; }
+            using UnityWebRequest request = CreateRequest("/rest/v1/rpc/frostbound_recruit_hero", UnityWebRequest.kHttpVerbPOST, "{\"p_key_type\":\"" + keyType + "\"}", true);
+            yield return request.SendWebRequest();
+            if (IsSuccess(request)) onSuccess?.Invoke(JsonUtility.FromJson<AdvancedHeroState>(request.downloadHandler.text));
+            else onError?.Invoke("Reclutamiento " + request.responseCode + ": " + SafeError(request));
+        }
+
+        public IEnumerator ProcessExpedition(int stage, string[] teamKeys, Action<ExpeditionBattleState> onSuccess, Action<string> onError)
+        {
+            if (!HasSession) { onError?.Invoke("Sin sesión de Supabase"); yield break; }
+            StringBuilder json = new StringBuilder("{\"p_stage\":").Append(stage).Append(",\"p_team_keys\":[");
+            for (int i = 0; i < teamKeys.Length; i++) { if (i > 0) json.Append(','); json.Append('"').Append(teamKeys[i]).Append('"'); }
+            json.Append("]}");
+            using UnityWebRequest request = CreateRequest("/rest/v1/rpc/frostbound_process_expedition", UnityWebRequest.kHttpVerbPOST, json.ToString(), true);
+            yield return request.SendWebRequest();
+            if (IsSuccess(request)) onSuccess?.Invoke(JsonUtility.FromJson<ExpeditionBattleState>(request.downloadHandler.text));
+            else onError?.Invoke("Expedición " + request.responseCode + ": " + SafeError(request));
+        }
+
+        public IEnumerator ClaimExpeditionIdle(Action<ExpeditionIdleState> onSuccess, Action<string> onError)
+        {
+            if (!HasSession) { onError?.Invoke("Sin sesión de Supabase"); yield break; }
+            using UnityWebRequest request = CreateRequest("/rest/v1/rpc/frostbound_claim_expedition_idle", UnityWebRequest.kHttpVerbPOST, "{}", true);
+            yield return request.SendWebRequest();
+            if (IsSuccess(request)) onSuccess?.Invoke(JsonUtility.FromJson<ExpeditionIdleState>(request.downloadHandler.text));
+            else onError?.Invoke("Recompensa idle " + request.responseCode + ": " + SafeError(request));
+        }
+
+        private IEnumerator CallHito16Rpc(string rpc, string json, Action<Hito16State> onSuccess, Action<string> onError)
+        {
+            if (!HasSession) { onError?.Invoke("Sin sesión de Supabase"); yield break; }
+            using UnityWebRequest request = CreateRequest("/rest/v1/rpc/" + rpc, UnityWebRequest.kHttpVerbPOST, json, true);
+            yield return request.SendWebRequest();
+            if (IsSuccess(request)) onSuccess?.Invoke(JsonUtility.FromJson<Hito16State>(request.downloadHandler.text));
+            else onError?.Invoke("Hito 16 " + request.responseCode + ": " + SafeError(request));
         }
 
         public IEnumerator RelocateWorldCity(int targetX, int targetY, Action onSuccess, Action<string> onError)
@@ -791,7 +855,7 @@ namespace FrostboundFrontier
             requestInProgress = true;
             Status = "NUBE: CARGANDO";
             using UnityWebRequest playerRequest = CreateRequest(
-                "/rest/v1/frostbound_players?select=display_name,temperature,population,wood,food,coal,generator_level,health,happiness,power,client_saved_at,snow_infantry,crystals,speedups&limit=1",
+                "/rest/v1/frostbound_players?select=display_name,temperature,population,wood,food,coal,generator_level,health,happiness,power,client_saved_at,snow_infantry,snow_lancers,snow_marksmen,crystals,speedups&limit=1",
                 UnityWebRequest.kHttpVerbGET, null, true);
             yield return playerRequest.SendWebRequest();
             if (playerRequest.responseCode == 401) { requestInProgress = false; yield return RefreshSession(); yield break; }
@@ -829,6 +893,7 @@ namespace FrostboundFrontier
                 population = player.population, wood = player.wood, food = player.food, coal = player.coal,
                 generator_level = player.generatorLevel, health = player.health, happiness = player.happiness,
                 power = player.power, client_saved_at = player.clientSavedAt, snow_infantry = player.snowInfantry,
+                snow_lancers = player.snowLancers, snow_marksmen = player.snowMarksmen,
                 crystals = player.crystals, speedups = player.speedups
             };
             using UnityWebRequest playerRequest = CreateUpsert("/rest/v1/frostbound_players?on_conflict=user_id", JsonUtility.ToJson(playerPayload));
@@ -884,7 +949,8 @@ namespace FrostboundFrontier
                 displayName = row.display_name, temperature = row.temperature, population = row.population,
                 wood = row.wood, food = row.food, coal = row.coal, generatorLevel = row.generator_level,
                 health = row.health, happiness = row.happiness, power = row.power, clientSavedAt = row.client_saved_at,
-                snowInfantry = row.snow_infantry, crystals = row.crystals, speedups = row.speedups
+                snowInfantry = row.snow_infantry, snowLancers = row.snow_lancers, snowMarksmen = row.snow_marksmen,
+                crystals = row.crystals, speedups = row.speedups
             };
         }
 

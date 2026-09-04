@@ -18,7 +18,11 @@ namespace FrostboundFrontier
             public int sawmillLevel = 1;
             public int kitchenLevel = 1;
             public int barracksLevel = 1;
+            public int lancerCampLevel = 1;
+            public int marksmanCampLevel = 1;
             public int snowInfantry = 20;
+            public int snowLancers;
+            public int snowMarksmen;
             public int crystals;
             public int speedups;
             public int woundedInfantry;
@@ -28,6 +32,7 @@ namespace FrostboundFrontier
             public string elenaHeroId = "";
             public bool elenaUnlocked = true;
             public int trainingAmount;
+            public string trainingType = "Infantry";
             public long trainingStartedUtcTicks;
             public long trainingEndsUtcTicks;
             public int population = 6;
@@ -67,6 +72,8 @@ namespace FrostboundFrontier
             public long power;
             public long clientSavedAt;
             public int snowInfantry;
+            public int snowLancers;
+            public int snowMarksmen;
             public long crystals;
             public int speedups;
         }
@@ -226,6 +233,8 @@ namespace FrostboundFrontier
             CreateBuilding("barracks", "Cuartel", new Vector3(-6f, 0.8f, 8f), new Vector3(3.8f, 1.7f, 2.8f), new Color(0.18f, 0.32f, 0.4f));
             CreateBuilding("hospital", "Enfermería", new Vector3(6f, 0.8f, 8f), new Vector3(3.8f, 1.7f, 2.8f), new Color(0.72f, 0.82f, 0.88f));
             CreateBuilding("research", "Laboratorio", new Vector3(0f, 0.9f, 12f), new Vector3(4.2f, 1.9f, 3f), new Color(0.12f, 0.48f, 0.62f));
+            CreateBuilding("lancer_camp", "Lanceros", new Vector3(-7f, 0.8f, 12f), new Vector3(3.5f, 1.7f, 2.8f), new Color(0.22f, 0.42f, 0.58f));
+            CreateBuilding("marksman_camp", "Tiradores", new Vector3(7f, 0.8f, 12f), new Vector3(3.5f, 1.7f, 2.8f), new Color(0.28f, 0.36f, 0.46f));
             CreateTrees();
             CreateWorkers();
         }
@@ -371,7 +380,7 @@ namespace FrostboundFrontier
             DrawResource(new Rect(width - 370f, 27f, 145f, 38f), "COMIDA", state.food, new Color(0.48f, 0.82f, 0.4f));
             DrawResource(new Rect(width - 210f, 27f, 150f, 38f), "LIBRES", AvailableWorkers(), new Color(0.45f, 0.78f, 1f));
 
-            if (AllianceManager.IsPanelOpen || ResearchManager.IsPanelOpen || QuestMailManager.IsPanelOpen || InventoryShopManager.IsPanelOpen)
+            if (AllianceManager.IsPanelOpen || ResearchManager.IsPanelOpen || QuestMailManager.IsPanelOpen || InventoryShopManager.IsPanelOpen || Hito16Manager.IsPanelOpen)
             {
                 GUI.matrix = oldMatrix;
                 return;
@@ -397,8 +406,8 @@ namespace FrostboundFrontier
             float cardX = 38f;
             foreach (Building building in buildings)
             {
-                if (GUI.Button(new Rect(cardX, height - 58f, 155f, 32f), building.DisplayName, buttonStyle)) selectedBuilding = building.Id;
-                cardX += 165f;
+                if (GUI.Button(new Rect(cardX, height - 58f, 125f, 32f), building.DisplayName, buttonStyle)) selectedBuilding = building.Id;
+                cardX += 135f;
             }
 
             if (Time.unscaledTime < toastUntil)
@@ -467,7 +476,7 @@ namespace FrostboundFrontier
 
         private void DrawUpgradeControls(float width, float height, int cost)
         {
-            if (selectedBuilding == "barracks" || selectedBuilding == "hospital" || selectedBuilding == "research") return;
+            if (selectedBuilding == "barracks" || selectedBuilding == "lancer_camp" || selectedBuilding == "marksman_camp" || selectedBuilding == "hospital" || selectedBuilding == "research") return;
             Rect area = new Rect(width - 255f, height - 136f, 215f, 70f);
             if (IsUpgrading(selectedBuilding))
             {
@@ -489,23 +498,28 @@ namespace FrostboundFrontier
 
         private void DrawTrainingControls(float width, float height)
         {
-            if (selectedBuilding != "barracks") return;
+            if (selectedBuilding != "barracks" && selectedBuilding != "lancer_camp" && selectedBuilding != "marksman_camp") return;
+            string troopLabel = selectedBuilding == "lancer_camp" ? "LANCEROS" : selectedBuilding == "marksman_camp" ? "TIRADORES" : "INFANTERÍA";
+            string troopType = selectedBuilding == "lancer_camp" ? "Lancer" : selectedBuilding == "marksman_camp" ? "Marksman" : "Infantry";
+            int troopCount = troopType == "Lancer" ? state.snowLancers : troopType == "Marksman" ? state.snowMarksmen : state.snowInfantry;
             Rect area = new Rect(width - 455f, height - 136f, 415f, 70f);
             if (state.trainingAmount > 0)
             {
                 long duration = state.trainingEndsUtcTicks - state.trainingStartedUtcTicks;
                 float progress = duration <= 0 ? 1f : Mathf.Clamp01((float)(DateTime.UtcNow.Ticks - state.trainingStartedUtcTicks) / duration);
-                DrawMeter(new Rect(area.x, area.y + 4f, area.width, 28f), progress, "ENTRENANDO " + state.trainingAmount + " INFANTERÍA", new Color(0.25f, 0.72f, 1f));
+                string activeType = string.IsNullOrEmpty(state.trainingType) ? "INFANTRY" : state.trainingType.ToUpperInvariant();
+                DrawMeter(new Rect(area.x, area.y + 4f, area.width, 28f), progress, "ENTRENANDO " + state.trainingAmount + " " + activeType, new Color(0.25f, 0.72f, 1f));
                 int remaining = Mathf.Max(0, Mathf.CeilToInt((float)new TimeSpan(state.trainingEndsUtcTicks - DateTime.UtcNow.Ticks).TotalSeconds));
                 GUI.Label(new Rect(area.x, area.y + 38f, area.width, 28f), "LISTO EN " + remaining + " s", resourceStyle);
                 return;
             }
-            GUI.Label(new Rect(area.x, area.y, 190f, 30f), "INFANTERÍA DE NIEVE  " + state.snowInfantry, resourceStyle);
+            GUI.Label(new Rect(area.x, area.y, 190f, 30f), troopLabel + "  " + troopCount, resourceStyle);
             if (GUI.Button(new Rect(area.x + 205f, area.y, 210f, 58f), "ENTRENAR 10\n50 comida · 10 s", buttonStyle))
             {
                 if (state.food < 50) { ShowToast("Comida insuficiente"); return; }
                 state.food -= 50;
                 state.trainingAmount = 10;
+                state.trainingType = troopType;
                 state.trainingStartedUtcTicks = DateTime.UtcNow.Ticks;
                 state.trainingEndsUtcTicks = DateTime.UtcNow.AddSeconds(10).Ticks;
                 Save();
@@ -517,14 +531,18 @@ namespace FrostboundFrontier
         {
             if (state == null || state.trainingAmount <= 0 || DateTime.UtcNow.Ticks < state.trainingEndsUtcTicks) return;
             int completed = state.trainingAmount;
-            state.snowInfantry += completed;
+            string completedType = string.IsNullOrEmpty(state.trainingType) ? "Infantry" : state.trainingType;
+            if (completedType == "Lancer") state.snowLancers += completed;
+            else if (completedType == "Marksman") state.snowMarksmen += completed;
+            else state.snowInfantry += completed;
             state.trainingAmount = 0;
+            state.trainingType = "Infantry";
             state.trainingStartedUtcTicks = 0;
             state.trainingEndsUtcTicks = 0;
             Save();
             QuestMailManager.Instance?.RecordProgress("TrainTroops", completed);
-            OnboardingManager.Notify("TroopsTrained");
-            ShowToast(completed + " Infantería de Nieve lista");
+            if (completedType == "Infantry") OnboardingManager.Notify("TroopsTrained");
+            ShowToast(completed + " " + (completedType == "Lancer" ? "Lanceros" : completedType == "Marksman" ? "Tiradores" : "Infantería") + " listos");
         }
 
         private void DrawHospitalControls(float width, float height)
@@ -661,6 +679,8 @@ namespace FrostboundFrontier
             if (completed == "sawmill") state.sawmillLevel++;
             if (completed == "kitchen") state.kitchenLevel++;
             if (completed == "barracks") state.barracksLevel++;
+            if (completed == "lancer_camp") state.lancerCampLevel++;
+            if (completed == "marksman_camp") state.marksmanCampLevel++;
             Building building = buildings.Find(item => item.Id == completed);
             if (building != null) building.Root.transform.localScale *= 1.08f;
             state.upgradingBuilding = "";
@@ -769,6 +789,8 @@ namespace FrostboundFrontier
             if (id == "sawmill") return state.sawmillLevel;
             if (id == "kitchen") return state.kitchenLevel;
             if (id == "barracks") return state.barracksLevel;
+            if (id == "lancer_camp") return state.lancerCampLevel;
+            if (id == "marksman_camp") return state.marksmanCampLevel;
             return 1;
         }
 
@@ -778,6 +800,8 @@ namespace FrostboundFrontier
             if (id == "sawmill") return "Aserradero";
             if (id == "kitchen") return "Cocina comunal";
             if (id == "barracks") return "Cuartel de Infantería";
+            if (id == "lancer_camp") return "Campamento de Lanceros";
+            if (id == "marksman_camp") return "Campo de Tiradores";
             if (id == "hospital") return "Enfermería";
             if (id == "research") return "Laboratorio de Investigación";
             return "Refugio";
@@ -789,6 +813,8 @@ namespace FrostboundFrontier
             if (id == "sawmill") return "Recupera madera congelada para nuevas construcciones.";
             if (id == "kitchen") return "Convierte suministros en raciones para los supervivientes.";
             if (id == "barracks") return "Entrena Infantería de Nieve para marchas y recolección.";
+            if (id == "lancer_camp") return "Entrena Lanceros: fuertes contra Infantería.";
+            if (id == "marksman_camp") return "Entrena Tiradores: fuertes contra Lanceros.";
             if (id == "hospital") return "Recibe tropas heridas y las devuelve al servicio activo.";
             if (id == "research") return "Desbloquea mejoras económicas y militares permanentes.";
             return "Aloja a la población y protege a los trabajadores del frío.";
@@ -983,6 +1009,8 @@ namespace FrostboundFrontier
                 power = state.generatorLevel * 100L + state.sawmillLevel * 50L + state.kitchenLevel * 50L + state.population * 10L,
                 clientSavedAt = state.lastSavedUtcTicks
                 ,snowInfantry = state.snowInfantry
+                ,snowLancers = state.snowLancers
+                ,snowMarksmen = state.snowMarksmen
                 ,crystals = state.crystals
                 ,speedups = state.speedups
             };
@@ -1024,6 +1052,8 @@ namespace FrostboundFrontier
                 state.populationHappiness = Mathf.Clamp(player.happiness, 0f, 100f);
                 state.lastSavedUtcTicks = player.clientSavedAt;
                 state.snowInfantry = Mathf.Max(0, player.snowInfantry);
+                state.snowLancers = Mathf.Max(0, player.snowLancers);
+                state.snowMarksmen = Mathf.Max(0, player.snowMarksmen);
                 state.crystals = (int)Math.Min(int.MaxValue, Math.Max(0L, player.crystals));
                 state.speedups = Mathf.Max(0, player.speedups);
             }
@@ -1045,6 +1075,8 @@ namespace FrostboundFrontier
                         state.kitchenWorkers = Mathf.Max(0, row.assignedWorkers);
                     }
                     if (row.buildingType == "barracks") state.barracksLevel = Mathf.Max(1, row.level);
+                    if (row.buildingType == "lancer_camp") state.lancerCampLevel = Mathf.Max(1, row.level);
+                    if (row.buildingType == "marksman_camp") state.marksmanCampLevel = Mathf.Max(1, row.level);
                     if (row.finishesUtcTicks > DateTime.UtcNow.Ticks)
                     {
                         state.upgradingBuilding = row.buildingType;

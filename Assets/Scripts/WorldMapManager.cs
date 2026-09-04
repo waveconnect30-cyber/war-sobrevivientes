@@ -957,7 +957,7 @@ namespace FrostboundFrontier
 
         private void EnsureMarchVisual()
         {
-            if (marchVisual != null || mapRoot == null) return;
+            if (marchVisual != null || mapRoot == null || marchPool == null) return;
             marchVisual = marchPool.Get(mapRoot.transform);
         }
 
@@ -974,7 +974,8 @@ namespace FrostboundFrontier
         private void ReleaseMarchVisual()
         {
             if (marchVisual == null) return;
-            marchPool.Release(marchVisual);
+            if (marchPool != null) marchPool.Release(marchVisual);
+            else Destroy(marchVisual);
             marchVisual = null;
         }
 
@@ -1264,7 +1265,7 @@ namespace FrostboundFrontier
             IsSelectionPanelOpen = IsWorldMapActive && selectedCoordinate.x >= 0 && !IsMaximumZoomOut && !cinematicZoomActive && !relocationMode && !alliancePlacementMode;
             GUI.depth = 100;
             EnsureStyles();
-            if (AllianceManager.IsPanelOpen || ResearchManager.IsPanelOpen || QuestMailManager.IsPanelOpen || InventoryShopManager.IsPanelOpen) return;
+            if (AllianceManager.IsPanelOpen || ResearchManager.IsPanelOpen || QuestMailManager.IsPanelOpen || InventoryShopManager.IsPanelOpen || Hito16Manager.IsPanelOpen) return;
             Rect safe = Screen.safeArea;
             float scale = Mathf.Clamp(safe.width / 1280f, 0.75f, 1.35f);
             Matrix4x4 previousMatrix = GUI.matrix;

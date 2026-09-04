@@ -32,7 +32,9 @@ namespace FrostboundFrontier.Editor
             PlayerSettings.defaultInterfaceOrientation = UIOrientation.LandscapeLeft;
 
             Texture2D icon = AssetDatabase.LoadAssetAtPath<Texture2D>(IconPath);
+            #pragma warning disable CS0618
             if (icon != null) PlayerSettings.SetIconsForTargetGroup(BuildTargetGroup.Android, new[] { icon });
+            #pragma warning restore CS0618
             Sprite splash = AssetDatabase.LoadAssetAtPath<Sprite>(IconPath);
             PlayerSettings.SplashScreen.show = true;
             PlayerSettings.SplashScreen.backgroundColor = new Color(.025f, .09f, .15f);
@@ -74,6 +76,15 @@ namespace FrostboundFrontier.Editor
             PlayerPrefs.DeleteKey("frostbound-active-march");
             PlayerPrefs.Save();
             Debug.Log("Tutorial y progreso local reiniciados. La información persistida en Supabase no fue eliminada.");
+        }
+
+        [MenuItem("Frostbound Frontier/Tutorial/Completar localmente para prueba")]
+        public static void CompleteTutorialForTesting()
+        {
+            PlayerPrefs.SetInt("frostbound-onboarding-local-test", 1);
+            PlayerPrefs.SetInt("frostbound-onboarding-step-v1", 5);
+            PlayerPrefs.Save();
+            Debug.Log("Tutorial marcado como completo únicamente para esta prueba local del Editor.");
         }
 
         private static void EnsureBrandingAsset()
