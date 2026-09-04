@@ -91,6 +91,8 @@ namespace FrostboundFrontier
             buttonTexture = Solid(new Color(.03f, .48f, .72f, 1f));
             labelStyle = new GUIStyle(GUI.skin.box) { normal = { background = panelTexture, textColor = Color.white }, fontSize = 16, alignment = TextAnchor.MiddleCenter, fontStyle = FontStyle.Bold };
             buttonStyle = new GUIStyle(GUI.skin.button) { normal = { background = buttonTexture, textColor = Color.white }, fontSize = 15, alignment = TextAnchor.MiddleCenter, fontStyle = FontStyle.Bold };
+            FrostboundVisualTheme.ApplyPanel(labelStyle, true);
+            FrostboundVisualTheme.ApplyButton(buttonStyle);
         }
 
         private static Texture2D Solid(Color color)

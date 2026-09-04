@@ -210,6 +210,7 @@ namespace FrostboundFrontier
             titleStyle = new GUIStyle(GUI.skin.label) { fontSize = 20, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter, normal = { textColor = Color.white } };
             bodyStyle = new GUIStyle(titleStyle) { fontSize = 15, fontStyle = FontStyle.Normal, wordWrap = true };
             buttonStyle = new GUIStyle(GUI.skin.button) { fontSize = 15, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter, normal = { background = blueTexture, textColor = Color.white }, hover = { background = orangeTexture, textColor = Color.white }, active = { background = orangeTexture, textColor = Color.white } };
+            FrostboundVisualTheme.ApplyButton(buttonStyle);
             cardStyle = new GUIStyle(buttonStyle) { normal = { background = orangeTexture, textColor = Color.white } };
         }
 

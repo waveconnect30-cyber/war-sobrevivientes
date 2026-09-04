@@ -247,6 +247,10 @@ namespace FrostboundFrontier
             buttonStyle = new GUIStyle(GUI.skin.button) { fontSize = 14, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
             buttonStyle.normal.background = buttonTexture; buttonStyle.hover.background = buttonTexture; buttonStyle.normal.textColor = Color.white; buttonStyle.hover.textColor = Color.white;
             activeButtonStyle = new GUIStyle(buttonStyle); activeButtonStyle.normal.background = accentTexture; activeButtonStyle.normal.textColor = new Color(.02f, .14f, .22f);
+            FrostboundVisualTheme.ApplyPanel(panelStyle);
+            FrostboundVisualTheme.ApplyPanel(rowStyle, true);
+            FrostboundVisualTheme.ApplyButton(buttonStyle);
+            FrostboundVisualTheme.ApplyButton(activeButtonStyle, true);
             progressStyle = new GUIStyle(GUI.skin.box); progressStyle.normal.background = MakeTexture(new Color(.01f, .035f, .055f, 1f));
         }
 

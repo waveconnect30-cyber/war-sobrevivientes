@@ -674,6 +674,35 @@ namespace FrostboundFrontier
             marker.transform.position = CoordinateToWorld(visual.data.x, visual.data.y) + new Vector3(0f, detailed ? 1.6f : .32f, 0f);
             float size = detailed ? (visual.data.tile_type == "Fortress" ? 0.85f : 0.58f) : .22f;
             marker.transform.localScale = detailed ? new Vector3(size, visual.data.tile_type == "PlayerCity" ? 2.2f : 1.35f, size) : new Vector3(size, .08f, size);
+            Sprite nodeSprite = FrostboundVisualTheme.NodeSprite(visual.data.tile_type, visual.data.res_type);
+            Renderer meshRenderer = marker.GetComponent<Renderer>();
+            SpriteRenderer spriteRenderer = marker.GetComponentInChildren<SpriteRenderer>(true);
+            if (nodeSprite != null)
+            {
+                if (spriteRenderer == null)
+                {
+                    GameObject iconObject = new GameObject("Casual GUI Node Icon");
+                    iconObject.transform.SetParent(marker.transform, false);
+                    spriteRenderer = iconObject.AddComponent<SpriteRenderer>();
+                }
+                spriteRenderer.sprite = nodeSprite;
+                spriteRenderer.color = visual.data.tile_type == "Beast" ? new Color(.45f, .9f, 1f) :
+                    visual.data.res_type == "Wood" ? new Color(.35f, .85f, .42f) :
+                    visual.data.res_type == "Food" ? new Color(1f, .62f, .28f) : new Color(.62f, .7f, .78f);
+                spriteRenderer.enabled = true;
+                if (meshRenderer != null) meshRenderer.enabled = false;
+                marker.transform.localScale = Vector3.one;
+                marker.transform.rotation = Quaternion.identity;
+                spriteRenderer.transform.localRotation = Quaternion.Euler(90f, 0f, 0f);
+                float spriteSize = Mathf.Max(.001f, Mathf.Max(nodeSprite.bounds.size.x, nodeSprite.bounds.size.y));
+                float desiredSize = detailed ? .82f : .24f;
+                spriteRenderer.transform.localScale = Vector3.one * (desiredSize / spriteSize);
+            }
+            else
+            {
+                if (spriteRenderer != null) spriteRenderer.enabled = false;
+                if (meshRenderer != null) meshRenderer.enabled = true;
+            }
             marker.GetComponent<Renderer>().sharedMaterial = MaterialFor(visual.data.tile_type);
             if (detailed && visual.data.tile_type == "PlayerCity")
             {
@@ -1592,6 +1621,8 @@ namespace FrostboundFrontier
             cardBodyStyle = new GUIStyle(GUI.skin.label) { fontSize = 16, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleLeft, normal = { textColor = new Color(0.08f, 0.28f, 0.46f) } };
             cardCoordinateStyle = new GUIStyle(GUI.skin.label) { fontSize = 18, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleLeft, normal = { textColor = Color.white } };
             buttonStyle = new GUIStyle(GUI.skin.button) { fontSize = 16, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter, normal = { background = blueButton, textColor = Color.white }, hover = { background = blueButton, textColor = Color.white }, active = { background = orangeButton, textColor = Color.white } };
+            FrostboundVisualTheme.ApplyPanel(bodyStyle);
+            FrostboundVisualTheme.ApplyButton(buttonStyle);
             cityPinStyle = new GUIStyle(GUI.skin.label) { alignment = TextAnchor.MiddleCenter };
             Texture2D transparent = SolidTexture(Color.clear);
             searchPinStyle = new GUIStyle(GUI.skin.button);

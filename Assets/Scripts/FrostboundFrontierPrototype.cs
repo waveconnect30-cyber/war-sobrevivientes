@@ -422,11 +422,9 @@ namespace FrostboundFrontier
 
         private void DrawResource(Rect rect, string label, int value, Color color)
         {
-            Color previous = GUI.color;
-            GUI.color = color;
-            GUI.DrawTexture(new Rect(rect.x, rect.y + 6f, 18f, 18f), accentTexture);
-            GUI.color = previous;
-            GUI.Label(new Rect(rect.x + 25f, rect.y, rect.width - 25f, rect.height), label + "  " + value, resourceStyle);
+            string icon = label == "MADERA" ? "wood" : label == "COMIDA" ? "food" : label == "CARBÓN" ? "coal" : label == "CRISTALES" ? "crystal" : label == "TEMP" ? "temperature" : "population";
+            FrostboundVisualTheme.DrawIcon(new Rect(rect.x, rect.y + 3f, 26f, 26f), icon, color);
+            GUI.Label(new Rect(rect.x + 31f, rect.y, rect.width - 31f, rect.height), label + "  " + value, resourceStyle);
         }
 
         private void DrawStatusPanel()
@@ -847,6 +845,8 @@ namespace FrostboundFrontier
             buttonStyle.normal.textColor = Color.white;
             buttonStyle.hover.textColor = Color.white;
             buttonStyle.active.textColor = new Color(0.03f, 0.08f, 0.1f);
+            FrostboundVisualTheme.ApplyPanel(bodyStyle);
+            FrostboundVisualTheme.ApplyButton(buttonStyle);
             stylesReady = true;
         }
 

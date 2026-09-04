@@ -171,6 +171,8 @@ namespace FrostboundFrontier
             titleStyle=new GUIStyle(GUI.skin.label){fontSize=21,fontStyle=FontStyle.Bold,alignment=TextAnchor.MiddleLeft};titleStyle.normal.textColor=new Color(.8f,.95f,1);
             bodyStyle=new GUIStyle(GUI.skin.label){fontSize=16,alignment=TextAnchor.MiddleLeft,wordWrap=true};bodyStyle.normal.textColor=Color.white;
             buttonStyle=new GUIStyle(GUI.skin.button){fontSize=16,fontStyle=FontStyle.Bold,alignment=TextAnchor.MiddleCenter};buttonStyle.normal.background=buttonTexture;buttonStyle.hover.background=buttonTexture;buttonStyle.normal.textColor=Color.white;
+            FrostboundVisualTheme.ApplyPanel(panelStyle);
+            FrostboundVisualTheme.ApplyButton(buttonStyle);
             activeButtonStyle=new GUIStyle(buttonStyle);activeButtonStyle.normal.background=activeTexture;activeButtonStyle.hover.background=activeTexture;stylesReady=true;
         }
         private static Texture2D Make(Color color){Texture2D t=new Texture2D(1,1);t.SetPixel(0,0,color);t.Apply();return t;}

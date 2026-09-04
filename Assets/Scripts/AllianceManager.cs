@@ -304,6 +304,8 @@ namespace FrostboundFrontier
             titleStyle = new GUIStyle(GUI.skin.label) { fontSize = 22, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleLeft }; titleStyle.normal.textColor = new Color(.78f, .94f, 1f);
             bodyStyle = new GUIStyle(GUI.skin.label) { fontSize = 17, alignment = TextAnchor.MiddleLeft, wordWrap = true }; bodyStyle.normal.textColor = Color.white;
             buttonStyle = new GUIStyle(GUI.skin.button) { fontSize = 16, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter }; buttonStyle.normal.background = buttonTexture; buttonStyle.hover.background = buttonTexture; buttonStyle.normal.textColor = Color.white;
+            FrostboundVisualTheme.ApplyPanel(panelStyle);
+            FrostboundVisualTheme.ApplyButton(buttonStyle);
             fieldStyle = new GUIStyle(GUI.skin.textField) { fontSize = 18, alignment = TextAnchor.MiddleLeft, padding = new RectOffset(12, 12, 8, 8) };
             stylesReady = true;
         }
