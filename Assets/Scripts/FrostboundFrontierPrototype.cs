@@ -116,6 +116,7 @@ namespace FrostboundFrontier
         public int WoundedInfantry => state != null ? state.woundedInfantry : 0;
         public bool ElenaUnlocked => state == null || state.elenaUnlocked;
         public string ElenaHeroId => state != null ? state.elenaHeroId : string.Empty;
+        public int Crystals => state != null ? state.crystals : 0;
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
         private static void EnsurePrototypeExists()
@@ -333,6 +334,7 @@ namespace FrostboundFrontier
         private void OnGUI()
         {
             if (WorldMapManager.IsWorldMapActive) return;
+            GUI.depth = 100;
             EnsureStyles();
             Rect safe = Screen.safeArea;
             float scale = Mathf.Clamp(Screen.width / 1280f, 0.75f, 1.35f);
@@ -348,6 +350,12 @@ namespace FrostboundFrontier
             DrawResource(new Rect(width - 530f, 27f, 145f, 38f), "MADERA", state.wood, new Color(0.82f, 0.63f, 0.36f));
             DrawResource(new Rect(width - 370f, 27f, 145f, 38f), "COMIDA", state.food, new Color(0.48f, 0.82f, 0.4f));
             DrawResource(new Rect(width - 210f, 27f, 150f, 38f), "LIBRES", AvailableWorkers(), new Color(0.45f, 0.78f, 1f));
+
+            if (AllianceManager.IsPanelOpen)
+            {
+                GUI.matrix = oldMatrix;
+                return;
+            }
 
             DrawStatusPanel();
             DrawTutorial(width);
@@ -426,6 +434,8 @@ namespace FrostboundFrontier
                 float progress = UpgradeProgress();
                 DrawMeter(new Rect(area.x, area.y + 8f, area.width, 25f), progress, Mathf.RoundToInt(progress * 100f) + "%", new Color(1f, 0.55f, 0.12f));
                 GUI.Label(new Rect(area.x, area.y + 37f, area.width, 28f), "LISTO EN " + UpgradeSecondsRemaining() + " s", resourceStyle);
+                if (GUI.Button(new Rect(area.x - 160f, area.y + 35f, 150f, 30f), "PEDIR AYUDA", buttonStyle))
+                    AllianceManager.Instance?.RequestHelp("BuildingUpgrade", selectedBuilding + "_01");
                 return;
             }
 
@@ -485,6 +495,8 @@ namespace FrostboundFrontier
                 long duration = state.healingEndsUtcTicks - state.healingStartedUtcTicks;
                 float progress = duration <= 0 ? 1f : Mathf.Clamp01((float)(DateTime.UtcNow.Ticks - state.healingStartedUtcTicks) / duration);
                 DrawMeter(new Rect(area.x, area.y + 34f, area.width, 27f), progress, "CURANDO " + state.healingAmount + " · " + HealingSecondsRemaining() + " s", new Color(0.24f, 0.86f, 0.68f));
+                if (GUI.Button(new Rect(area.x - 160f, area.y + 31f, 150f, 34f), "PEDIR AYUDA", buttonStyle))
+                    AllianceManager.Instance?.RequestHelp("HospitalHealing", "hospital_01");
                 return;
             }
             int amount = Mathf.Min(10, state.woundedInfantry);
@@ -826,6 +838,13 @@ namespace FrostboundFrontier
             else return;
             Save();
             ShowToast("Marcha regresó con " + amount + " de " + resourceType);
+        }
+
+        public void SpendCrystalsLocally(int amount)
+        {
+            if (state == null || amount <= 0) return;
+            state.crystals = Mathf.Max(0, state.crystals - amount);
+            Save();
         }
 
         public void ApplyBattleOutcome(int casualties, int wounded, string lootType, int lootAmount)

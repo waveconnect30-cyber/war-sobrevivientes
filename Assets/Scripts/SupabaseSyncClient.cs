@@ -127,6 +127,38 @@ namespace FrostboundFrontier
             public int food_cost;
             public int completed;
         }
+        [Serializable] public sealed class AllianceCloudState
+        {
+            public string alliance_id;
+            public string name;
+            public string tag;
+            public string member_role;
+            public int member_count;
+            public long power_total;
+            public int crystal_cost;
+        }
+        [Serializable] public sealed class AllianceSearchRow
+        {
+            public string id;
+            public string name;
+            public string tag;
+            public long power_total;
+        }
+        [Serializable] public sealed class AllianceHelpRow
+        {
+            public string id;
+            public string requester_id;
+            public string target_type;
+            public string target_key;
+            public int help_count;
+            public string created_at;
+        }
+        [Serializable] private sealed class AllianceSearchRows { public AllianceSearchRow[] items; }
+        [Serializable] private sealed class AllianceHelpRows { public AllianceHelpRow[] items; }
+        [Serializable] private sealed class CreateAllianceRequest { public string p_name; public string p_tag; }
+        [Serializable] private sealed class JoinAllianceRequest { public string p_alliance_id; }
+        [Serializable] private sealed class RequestHelpPayload { public string p_target_type; public string p_target_key; }
+        [Serializable] private sealed class HelpActionPayload { public string help_id; public string helper_id; }
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSceneLoad)]
         private static void Install()
@@ -273,6 +305,105 @@ namespace FrostboundFrontier
             yield return request.SendWebRequest();
             if (IsSuccess(request)) onSuccess?.Invoke(JsonUtility.FromJson<HospitalCloudState>(request.downloadHandler.text));
             else onError?.Invoke("Finalizar curación " + request.responseCode + ": " + SafeError(request));
+        }
+
+        public IEnumerator FetchMyAlliance(Action<AllianceCloudState> onSuccess, Action<string> onError)
+        {
+            if (!HasSession) { onError?.Invoke("Sin sesión de Supabase"); yield break; }
+            string path = "/rest/v1/frostbound_alliance_members?select=member_role,alliance:frostbound_alliances(id,name,tag,power_total)&user_id=eq." + userId + "&limit=1";
+            using UnityWebRequest request = CreateRequest(path, UnityWebRequest.kHttpVerbGET, null, true);
+            yield return request.SendWebRequest();
+            if (!IsSuccess(request)) { onError?.Invoke("Alianza " + request.responseCode + ": " + SafeError(request)); yield break; }
+            onSuccess?.Invoke(ParseAllianceMembership(request.downloadHandler.text));
+        }
+
+        public IEnumerator SearchAlliances(string search, Action<AllianceSearchRow[]> onSuccess, Action<string> onError)
+        {
+            if (!HasSession) { onError?.Invoke("Sin sesión de Supabase"); yield break; }
+            string filter = string.IsNullOrWhiteSpace(search) ? string.Empty : "&or=(name.ilike.*" + UnityWebRequest.EscapeURL(search.Trim()) + "*,tag.ilike.*" + UnityWebRequest.EscapeURL(search.Trim().ToUpperInvariant()) + "*)";
+            using UnityWebRequest request = CreateRequest("/rest/v1/frostbound_alliances?select=id,name,tag,power_total&order=power_total.desc&limit=12" + filter, UnityWebRequest.kHttpVerbGET, null, true);
+            yield return request.SendWebRequest();
+            if (!IsSuccess(request)) { onError?.Invoke("Buscar alianzas " + request.responseCode + ": " + SafeError(request)); yield break; }
+            AllianceSearchRows rows = ParseArray<AllianceSearchRows>(request.downloadHandler.text);
+            onSuccess?.Invoke(rows?.items ?? Array.Empty<AllianceSearchRow>());
+        }
+
+        public IEnumerator CreateAlliance(string allianceName, string tag, Action<AllianceCloudState> onSuccess, Action<string> onError)
+        {
+            CreateAllianceRequest payload = new CreateAllianceRequest { p_name = allianceName, p_tag = tag };
+            yield return CallAllianceRpc("frostbound_create_alliance", JsonUtility.ToJson(payload), onSuccess, onError);
+        }
+
+        public IEnumerator JoinAlliance(string allianceId, Action<AllianceCloudState> onSuccess, Action<string> onError)
+        {
+            JoinAllianceRequest payload = new JoinAllianceRequest { p_alliance_id = allianceId };
+            yield return CallAllianceRpc("frostbound_join_alliance", JsonUtility.ToJson(payload), onSuccess, onError);
+        }
+
+        public IEnumerator RequestAllianceHelp(string targetType, string targetKey, Action onSuccess, Action<string> onError)
+        {
+            if (!HasSession) { onError?.Invoke("Necesitas conexión para pedir ayuda"); yield break; }
+            RequestHelpPayload payload = new RequestHelpPayload { p_target_type = targetType, p_target_key = targetKey };
+            using UnityWebRequest request = CreateRequest("/rest/v1/rpc/frostbound_request_alliance_help", UnityWebRequest.kHttpVerbPOST, JsonUtility.ToJson(payload), true);
+            yield return request.SendWebRequest();
+            if (IsSuccess(request)) onSuccess?.Invoke(); else onError?.Invoke("Pedir ayuda " + request.responseCode + ": " + SafeError(request));
+        }
+
+        public IEnumerator FetchAllianceHelp(Action<AllianceHelpRow[]> onSuccess, Action<string> onError)
+        {
+            if (!HasSession) { onError?.Invoke("Sin sesión de Supabase"); yield break; }
+            using UnityWebRequest request = CreateRequest("/rest/v1/frostbound_alliance_help?select=id,requester_id,target_type,target_key,help_count,created_at&status=eq.Open&order=created_at.desc&limit=20", UnityWebRequest.kHttpVerbGET, null, true);
+            yield return request.SendWebRequest();
+            if (!IsSuccess(request)) { onError?.Invoke("Ayudas " + request.responseCode + ": " + SafeError(request)); yield break; }
+            AllianceHelpRows rows = ParseArray<AllianceHelpRows>(request.downloadHandler.text);
+            onSuccess?.Invoke(rows?.items ?? Array.Empty<AllianceHelpRow>());
+        }
+
+        public IEnumerator GiveAllianceHelp(string helpId, Action onSuccess, Action<string> onError)
+        {
+            if (!HasSession) { onError?.Invoke("Sin sesión de Supabase"); yield break; }
+            HelpActionPayload payload = new HelpActionPayload { help_id = helpId, helper_id = userId };
+            using UnityWebRequest request = CreateRequest("/rest/v1/frostbound_alliance_help_actions", UnityWebRequest.kHttpVerbPOST, JsonUtility.ToJson(payload), true);
+            request.SetRequestHeader("Prefer", "return=minimal");
+            yield return request.SendWebRequest();
+            if (IsSuccess(request)) onSuccess?.Invoke(); else onError?.Invoke("Ayudar " + request.responseCode + ": " + SafeError(request));
+        }
+
+        private IEnumerator CallAllianceRpc(string rpc, string json, Action<AllianceCloudState> onSuccess, Action<string> onError)
+        {
+            if (!HasSession) { onError?.Invoke("Sin sesión de Supabase"); yield break; }
+            using UnityWebRequest request = CreateRequest("/rest/v1/rpc/" + rpc, UnityWebRequest.kHttpVerbPOST, json, true);
+            yield return request.SendWebRequest();
+            if (IsSuccess(request)) onSuccess?.Invoke(JsonUtility.FromJson<AllianceCloudState>(request.downloadHandler.text));
+            else onError?.Invoke("Alianza " + request.responseCode + ": " + SafeError(request));
+        }
+
+        private static AllianceCloudState ParseAllianceMembership(string json)
+        {
+            if (string.IsNullOrWhiteSpace(json) || json == "[]") return null;
+            string role = ExtractJsonString(json, "member_role");
+            return new AllianceCloudState
+            {
+                alliance_id = ExtractJsonString(json, "id"), name = ExtractJsonString(json, "name"),
+                tag = ExtractJsonString(json, "tag"), member_role = role,
+                power_total = ExtractJsonLong(json, "power_total"), member_count = 1
+            };
+        }
+
+        private static string ExtractJsonString(string json, string key)
+        {
+            string marker = "\"" + key + "\":"; int start = json.IndexOf(marker, StringComparison.Ordinal);
+            if (start < 0) return string.Empty; start = json.IndexOf('"', start + marker.Length);
+            if (start < 0) return string.Empty; int end = json.IndexOf('"', start + 1);
+            return end > start ? json.Substring(start + 1, end - start - 1) : string.Empty;
+        }
+
+        private static long ExtractJsonLong(string json, string key)
+        {
+            string marker = "\"" + key + "\":"; int start = json.IndexOf(marker, StringComparison.Ordinal);
+            if (start < 0) return 0; start += marker.Length; int end = start;
+            while (end < json.Length && (char.IsDigit(json[end]) || json[end] == '-')) end++;
+            return long.TryParse(json.Substring(start, end - start), out long value) ? value : 0;
         }
 
         private IEnumerator SignInAnonymously()

@@ -932,7 +932,9 @@ namespace FrostboundFrontier
 
         private void OnGUI()
         {
+            GUI.depth = 100;
             EnsureStyles();
+            if (AllianceManager.IsPanelOpen) return;
             float scale = Mathf.Clamp(Screen.width / 1280f, 0.75f, 1.35f);
             Matrix4x4 previousMatrix = GUI.matrix;
             GUI.matrix = Matrix4x4.TRS(Vector3.zero, Quaternion.identity, Vector3.one * scale);
@@ -994,7 +996,9 @@ namespace FrostboundFrontier
             if (!interactive)
             {
                 GUI.DrawTexture(pin, greenPin);
-                GUI.Label(new Rect(pin.x - 42f, pin.y + 48f, 144f, 24f), "TU CIUDAD", coordinateStyle);
+                string tag = AllianceManager.LocalTag;
+                GUI.Label(new Rect(pin.x - 62f, pin.y + 48f, 184f, 24f),
+                    string.IsNullOrEmpty(tag) ? "TU CIUDAD" : "[" + tag + "] TU CIUDAD", coordinateStyle);
                 return;
             }
 
