@@ -103,6 +103,8 @@ namespace FrostboundFrontier
         private string toast = "Mantén vivo el generador";
         private float toastUntil;
         private float productionAccumulator;
+        private float woodProductionCarry;
+        private float foodProductionCarry;
         private float autosaveAccumulator;
         private float dayPhase;
         private Vector2 lastPointer;
@@ -206,6 +208,7 @@ namespace FrostboundFrontier
             CreateBuilding("shelter", "Refugio", new Vector3(0f, 0.7f, 8f), new Vector3(4.2f, 1.4f, 2.8f), new Color(0.24f, 0.34f, 0.42f));
             CreateBuilding("barracks", "Cuartel", new Vector3(-6f, 0.8f, 8f), new Vector3(3.8f, 1.7f, 2.8f), new Color(0.18f, 0.32f, 0.4f));
             CreateBuilding("hospital", "Enfermería", new Vector3(6f, 0.8f, 8f), new Vector3(3.8f, 1.7f, 2.8f), new Color(0.72f, 0.82f, 0.88f));
+            CreateBuilding("research", "Laboratorio", new Vector3(0f, 0.9f, 12f), new Vector3(4.2f, 1.9f, 3f), new Color(0.12f, 0.48f, 0.62f));
             CreateTrees();
             CreateWorkers();
         }
@@ -351,7 +354,7 @@ namespace FrostboundFrontier
             DrawResource(new Rect(width - 370f, 27f, 145f, 38f), "COMIDA", state.food, new Color(0.48f, 0.82f, 0.4f));
             DrawResource(new Rect(width - 210f, 27f, 150f, 38f), "LIBRES", AvailableWorkers(), new Color(0.45f, 0.78f, 1f));
 
-            if (AllianceManager.IsPanelOpen)
+            if (AllianceManager.IsPanelOpen || ResearchManager.IsPanelOpen)
             {
                 GUI.matrix = oldMatrix;
                 return;
@@ -371,6 +374,7 @@ namespace FrostboundFrontier
             DrawUpgradeControls(width, height, cost);
             DrawTrainingControls(width, height);
             DrawHospitalControls(width, height);
+            DrawResearchControls(width, height);
 
             float cardX = 38f;
             foreach (Building building in buildings)
@@ -427,7 +431,7 @@ namespace FrostboundFrontier
 
         private void DrawUpgradeControls(float width, float height, int cost)
         {
-            if (selectedBuilding == "barracks" || selectedBuilding == "hospital") return;
+            if (selectedBuilding == "barracks" || selectedBuilding == "hospital" || selectedBuilding == "research") return;
             Rect area = new Rect(width - 255f, height - 136f, 215f, 70f);
             if (IsUpgrading(selectedBuilding))
             {
@@ -504,6 +508,14 @@ namespace FrostboundFrontier
             GUI.enabled = amount > 0 && !healingRequestPending;
             if (GUI.Button(new Rect(area.x + 230f, area.y, 230f, 58f), amount > 0 ? "CURAR " + amount + "\n" + (amount * 2) + " comida" : "SIN HERIDOS", buttonStyle)) StartHealing(amount);
             GUI.enabled = previous;
+        }
+
+        private void DrawResearchControls(float width, float height)
+        {
+            if (selectedBuilding != "research") return;
+            GUI.Label(new Rect(width - 530f, height - 142f, 260f, 36f), "ÁRBOL DE TECNOLOGÍAS", resourceStyle);
+            if (GUI.Button(new Rect(width - 255f, height - 142f, 215f, 62f), "ABRIR INVESTIGACIÓN", buttonStyle))
+                ResearchManager.Instance?.OpenPanel();
         }
 
         private void StartHealing(int amount)
@@ -652,8 +664,12 @@ namespace FrostboundFrontier
                 state.heat = Mathf.Max(0, state.heat - 2);
             }
 
-            state.wood += state.sawmillWorkers * state.sawmillLevel * 2;
-            state.food += state.kitchenWorkers * state.kitchenLevel * 2;
+            woodProductionCarry += state.sawmillWorkers * state.sawmillLevel * 2f * ResearchManager.WoodProductionMultiplier;
+            foodProductionCarry += state.kitchenWorkers * state.kitchenLevel * 2f * ResearchManager.FoodProductionMultiplier;
+            int producedWood = Mathf.FloorToInt(woodProductionCarry);
+            int producedFood = Mathf.FloorToInt(foodProductionCarry);
+            state.wood += producedWood; state.food += producedFood;
+            woodProductionCarry -= producedWood; foodProductionCarry -= producedFood;
             state.food = Mathf.Max(0, state.food - Mathf.Max(1, state.population / 3));
 
             bool dangerousCold = state.temperature < 5f;
@@ -723,6 +739,7 @@ namespace FrostboundFrontier
             if (id == "kitchen") return "Cocina comunal";
             if (id == "barracks") return "Cuartel de Infantería";
             if (id == "hospital") return "Enfermería";
+            if (id == "research") return "Laboratorio de Investigación";
             return "Refugio";
         }
 
@@ -733,6 +750,7 @@ namespace FrostboundFrontier
             if (id == "kitchen") return "Convierte suministros en raciones para los supervivientes.";
             if (id == "barracks") return "Entrena Infantería de Nieve para marchas y recolección.";
             if (id == "hospital") return "Recibe tropas heridas y las devuelve al servicio activo.";
+            if (id == "research") return "Desbloquea mejoras económicas y militares permanentes.";
             return "Aloja a la población y protege a los trabajadores del frío.";
         }
 
@@ -844,6 +862,15 @@ namespace FrostboundFrontier
         {
             if (state == null || amount <= 0) return;
             state.crystals = Mathf.Max(0, state.crystals - amount);
+            Save();
+        }
+
+        public void SpendResearchResourcesLocally(int wood, int food, int crystals)
+        {
+            if (state == null) return;
+            state.wood = Mathf.Max(0, state.wood - Mathf.Max(0, wood));
+            state.food = Mathf.Max(0, state.food - Mathf.Max(0, food));
+            state.crystals = Mathf.Max(0, state.crystals - Mathf.Max(0, crystals));
             Save();
         }
 

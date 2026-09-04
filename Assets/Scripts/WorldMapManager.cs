@@ -541,7 +541,7 @@ namespace FrostboundFrontier
             troopsToSend = Mathf.Clamp(troopsToSend, 1, prototype.SnowInfantry);
             Vector2Int city = GetCityCoordinate();
             float distance = Vector2.Distance(city, selectedCoordinate);
-            float speedMultiplier = assignElena && prototype.ElenaUnlocked ? 0.8f : 1f;
+            float speedMultiplier = (assignElena && prototype.ElenaUnlocked ? 0.8f : 1f) * ResearchManager.MarchDurationMultiplier;
             float seconds = Mathf.Max(2f, distance * MarchSecondsPerTile * speedMultiplier);
             activeMarch = new LocalMarch
             {
@@ -568,7 +568,7 @@ namespace FrostboundFrontier
             if (available <= 0) { actionMessage = "NECESITAS INFANTERÍA DE NIEVE"; actionMessageUntil = Time.unscaledTime + 3f; return; }
             troopsToSend = Mathf.Clamp(troopsToSend, 1, available);
             Vector2Int city = GetCityCoordinate();
-            float speedMultiplier = assignElena && prototype.ElenaUnlocked ? 0.8f : 1f;
+            float speedMultiplier = (assignElena && prototype.ElenaUnlocked ? 0.8f : 1f) * ResearchManager.MarchDurationMultiplier;
             float seconds = Mathf.Max(2f, Vector2.Distance(city, selectedCoordinate) * MarchSecondsPerTile * speedMultiplier);
             activeMarch = new LocalMarch
             {
@@ -632,7 +632,7 @@ namespace FrostboundFrontier
                 float distance = Vector2.Distance(new Vector2(activeMarch.originX, activeMarch.originY), new Vector2(activeMarch.targetX, activeMarch.targetY));
                 activeMarch.status = "Return";
                 activeMarch.phaseStartedTicks = now;
-                activeMarch.phaseEndsTicks = DateTime.UtcNow.AddSeconds(Mathf.Max(2f, distance * MarchSecondsPerTile * (1f - activeMarch.heroSpeedBonus))).Ticks;
+                activeMarch.phaseEndsTicks = DateTime.UtcNow.AddSeconds(Mathf.Max(2f, distance * MarchSecondsPerTile * (1f - activeMarch.heroSpeedBonus) * ResearchManager.MarchDurationMultiplier)).Ticks;
                 SaveActiveMarch();
             }
             else
@@ -661,7 +661,7 @@ namespace FrostboundFrontier
             float distance = Vector2.Distance(new Vector2(march.originX, march.originY), new Vector2(march.targetX, march.targetY));
             march.status = "Return";
             march.phaseStartedTicks = DateTime.UtcNow.Ticks;
-            march.phaseEndsTicks = DateTime.UtcNow.AddSeconds(Mathf.Max(2f, distance * MarchSecondsPerTile * (1f - march.heroSpeedBonus))).Ticks;
+            march.phaseEndsTicks = DateTime.UtcNow.AddSeconds(Mathf.Max(2f, distance * MarchSecondsPerTile * (1f - march.heroSpeedBonus) * ResearchManager.MarchDurationMultiplier)).Ticks;
             SaveActiveMarch();
         }
 
@@ -934,7 +934,7 @@ namespace FrostboundFrontier
         {
             GUI.depth = 100;
             EnsureStyles();
-            if (AllianceManager.IsPanelOpen) return;
+            if (AllianceManager.IsPanelOpen || ResearchManager.IsPanelOpen) return;
             float scale = Mathf.Clamp(Screen.width / 1280f, 0.75f, 1.35f);
             Matrix4x4 previousMatrix = GUI.matrix;
             GUI.matrix = Matrix4x4.TRS(Vector3.zero, Quaternion.identity, Vector3.one * scale);
@@ -1075,7 +1075,7 @@ namespace FrostboundFrontier
             {
                 int available = Mathf.Max(0, prototype.SnowInfantry);
                 troopsToSend = Mathf.Clamp(troopsToSend, 1, Mathf.Max(1, available));
-                int combatPower = Mathf.CeilToInt(troopsToSend * 20f * (assignElena && prototype.ElenaUnlocked ? 1.15f : 1f));
+                int combatPower = Mathf.CeilToInt(troopsToSend * 20f * (assignElena && prototype.ElenaUnlocked ? 1.15f : 1f) * ResearchManager.CombatPowerMultiplier);
                 string stat = type == "ResourceNode" ? "CARGA " + (troopsToSend * LoadPerSnowInfantry) : "PODER " + combatPower;
                 GUI.Label(new Rect(panel.x + 28f, panel.y + 252f, 295f, 42f), "TROPAS " + troopsToSend + "  ·  " + stat, cardBodyStyle);
                 if (GUI.Button(new Rect(panel.x + 340f, panel.y + 250f, 48f, 42f), "−", buttonStyle)) troopsToSend = Mathf.Max(1, troopsToSend - 1);

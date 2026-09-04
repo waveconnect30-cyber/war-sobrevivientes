@@ -81,6 +81,7 @@ namespace FrostboundFrontier
 
         private void OnGUI()
         {
+            if (ResearchManager.IsPanelOpen) return;
             EnsureStyles();
             int previousDepth = GUI.depth;
             GUI.depth = 100;
@@ -141,7 +142,8 @@ namespace FrostboundFrontier
                 SupabaseSyncClient.AllianceHelpRow row = helpRequests[i];
                 if (row.requester_id == SupabaseSyncClient.Instance.CurrentUserId) continue;
                 float y = visibleIndex++ * 58f;
-                string target = row.target_type == "HospitalHealing" ? "Curación en Enfermería" : "Mejora: " + row.target_key.Replace("_01", "");
+                string target = row.target_type == "HospitalHealing" ? "Curación en Enfermería" :
+                    row.target_type == "Research" ? "Investigación: " + row.target_key : "Mejora: " + row.target_key.Replace("_01", "");
                 GUI.Label(new Rect(0f, y, 440f, 50f), target + "  ·  Ayudas " + row.help_count, bodyStyle);
                 if (GUI.Button(new Rect(470f, y + 5f, 150f, 40f), "AYUDAR", buttonStyle)) GiveHelp(row.id);
             }

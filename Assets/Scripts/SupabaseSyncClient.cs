@@ -159,6 +159,21 @@ namespace FrostboundFrontier
         [Serializable] private sealed class JoinAllianceRequest { public string p_alliance_id; }
         [Serializable] private sealed class RequestHelpPayload { public string p_target_type; public string p_target_key; }
         [Serializable] private sealed class HelpActionPayload { public string help_id; public string helper_id; }
+        [Serializable] public sealed class ResearchCloudState
+        {
+            public string tech_id;
+            public string branch;
+            public int level;
+            public int target_level;
+            public string status;
+            public string research_started_at;
+            public string finishes_at;
+            public int wood_cost;
+            public int food_cost;
+            public int crystal_cost;
+        }
+        [Serializable] private sealed class ResearchRows { public ResearchCloudState[] items; }
+        [Serializable] private sealed class ResearchRequest { public string p_tech_id; }
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSceneLoad)]
         private static void Install()
@@ -367,6 +382,36 @@ namespace FrostboundFrontier
             request.SetRequestHeader("Prefer", "return=minimal");
             yield return request.SendWebRequest();
             if (IsSuccess(request)) onSuccess?.Invoke(); else onError?.Invoke("Ayudar " + request.responseCode + ": " + SafeError(request));
+        }
+
+        public IEnumerator FetchResearch(Action<ResearchCloudState[]> onSuccess, Action<string> onError)
+        {
+            if (!HasSession) { onError?.Invoke("Sin sesión de Supabase"); yield break; }
+            using UnityWebRequest request = CreateRequest("/rest/v1/frostbound_research?select=tech_id,branch,level,target_level,status,research_started_at,finishes_at,wood_cost,food_cost,crystal_cost&order=branch,tech_id", UnityWebRequest.kHttpVerbGET, null, true);
+            yield return request.SendWebRequest();
+            if (!IsSuccess(request)) { onError?.Invoke("Investigación " + request.responseCode + ": " + SafeError(request)); yield break; }
+            ResearchRows rows = ParseArray<ResearchRows>(request.downloadHandler.text);
+            onSuccess?.Invoke(rows?.items ?? Array.Empty<ResearchCloudState>());
+        }
+
+        public IEnumerator StartResearch(string techId, Action<ResearchCloudState> onSuccess, Action<string> onError)
+        {
+            yield return CallResearchRpc("frostbound_start_research", techId, onSuccess, onError);
+        }
+
+        public IEnumerator CompleteResearch(string techId, Action<ResearchCloudState> onSuccess, Action<string> onError)
+        {
+            yield return CallResearchRpc("frostbound_complete_research", techId, onSuccess, onError);
+        }
+
+        private IEnumerator CallResearchRpc(string rpc, string techId, Action<ResearchCloudState> onSuccess, Action<string> onError)
+        {
+            if (!HasSession) { onError?.Invoke("Sin sesión de Supabase"); yield break; }
+            ResearchRequest payload = new ResearchRequest { p_tech_id = techId };
+            using UnityWebRequest request = CreateRequest("/rest/v1/rpc/" + rpc, UnityWebRequest.kHttpVerbPOST, JsonUtility.ToJson(payload), true);
+            yield return request.SendWebRequest();
+            if (IsSuccess(request)) onSuccess?.Invoke(JsonUtility.FromJson<ResearchCloudState>(request.downloadHandler.text));
+            else onError?.Invoke("Investigación " + request.responseCode + ": " + SafeError(request));
         }
 
         private IEnumerator CallAllianceRpc(string rpc, string json, Action<AllianceCloudState> onSuccess, Action<string> onError)
