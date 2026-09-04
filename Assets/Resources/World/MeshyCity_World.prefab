@@ -223,21 +223,21 @@ LODGroup:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 4273502596727127363}
   serializedVersion: 3
-  m_LocalReferencePoint: {x: -0.00009247661, y: -0.0003581941, z: 0.000004887581}
-  m_Size: 0.8782947
+  m_LocalReferencePoint: {x: 0.00031644106, y: 0.79116285, z: -0.0005111098}
+  m_Size: 1.6385758
   m_FadeMode: 1
   m_AnimateCrossFading: 1
   m_LastLODIsBillboard: 0
   m_LODs:
-  - screenRelativeHeight: 0.48
+  - screenRelativeHeight: 0.12
     fadeTransitionWidth: 0
     renderers:
     - renderer: {fileID: 5259039376047313849}
-  - screenRelativeHeight: 0.16
+  - screenRelativeHeight: 0.025
     fadeTransitionWidth: 0
     renderers:
     - renderer: {fileID: 5891337739099380613}
-  - screenRelativeHeight: 0.025
+  - screenRelativeHeight: 0.003
     fadeTransitionWidth: 0
     renderers:
     - renderer: {fileID: 6495868607452401246}
@@ -359,9 +359,9 @@ Transform:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 5884711302987428757}
   serializedVersion: 2
-  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: 0.0022486679, y: 0.0024122072, z: -0.0019069858}
-  m_LocalScale: {x: 0.46326017, y: 0.46326017, z: 0.46326017}
+  m_LocalRotation: {x: 0.15272635, y: 0.21377489, z: -0.03385862, w: 0.9642762}
+  m_LocalPosition: {x: 0.0022486679, y: 0.89753234, z: -0.0019069858}
+  m_LocalScale: {x: 0.46326017, y: 0.7412163, z: 0.46326017}
   m_ConstrainProportionsScale: 0
   m_Children:
   - {fileID: 4868541697563418479}
@@ -391,9 +391,9 @@ Transform:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 7661153570877128222}
   serializedVersion: 2
-  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: 0.0022486679, y: 0.0024122072, z: -0.0019069858}
-  m_LocalScale: {x: 0.46326017, y: 0.46326017, z: 0.46326017}
+  m_LocalRotation: {x: 0.15272635, y: 0.21377489, z: -0.03385862, w: 0.9642762}
+  m_LocalPosition: {x: 0.0022486679, y: 0.89753234, z: -0.0019069858}
+  m_LocalScale: {x: 0.46326017, y: 0.7412163, z: 0.46326017}
   m_ConstrainProportionsScale: 0
   m_Children:
   - {fileID: 5573811712961005387}

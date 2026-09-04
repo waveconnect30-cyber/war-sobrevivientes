@@ -1,7 +1,8 @@
 Frostbound Frontier - Meshy City Optimization
-Tile footprint: 0.88 x 0.88 units (1 tile)
+Tile footprint: 0.88 x 0.88 units (1 tile), vertical scale 1.60
 Texture Android: 1024px ASTC 6x6
+LOD thresholds: 0.12 / 0.025 / 0.003
 LOD0: 132,854 vertices / 275,680 triangles
 LOD1: 4,763 vertices / 10,962 triangles
 LOD2: 1 SpriteRenderer quad
-Prefab YAML: 11,803 bytes
+Prefab YAML: 11,865 bytes

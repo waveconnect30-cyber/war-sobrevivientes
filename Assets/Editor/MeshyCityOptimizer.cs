@@ -72,8 +72,14 @@ namespace FrostboundFrontier.EditorTools
             high.transform.SetParent(root.transform, false);
             medium.transform.SetParent(root.transform, false);
             far.transform.SetParent(root.transform, false);
-            high.transform.localScale = medium.transform.localScale = Vector3.one * normalizedScale;
-            high.transform.localPosition = medium.transform.localPosition = -sourceBounds.center * normalizedScale;
+            Vector3 modelScale = new Vector3(normalizedScale, normalizedScale * 1.6f, normalizedScale);
+            Vector3 groundedPosition = new Vector3(
+                -sourceBounds.center.x * normalizedScale,
+                -sourceBounds.min.y * modelScale.y + .28f,
+                -sourceBounds.center.z * normalizedScale);
+            high.transform.localScale = medium.transform.localScale = modelScale;
+            high.transform.localPosition = medium.transform.localPosition = groundedPosition;
+            high.transform.localRotation = medium.transform.localRotation = Quaternion.Euler(18f, 25f, 0f);
 
             List<Renderer> lod0 = BuildLevel(instance, high.transform, .006f, "LOD0", cityMaterial);
             List<Renderer> lod1 = BuildLevel(instance, medium.transform, .035f, "LOD1", cityMaterial);
@@ -92,9 +98,9 @@ namespace FrostboundFrontier.EditorTools
 
             LODGroup group = root.AddComponent<LODGroup>();
             group.SetLODs(new[] {
-                new LOD(.48f, lod0.ToArray()),
-                new LOD(.16f, lod1.ToArray()),
-                new LOD(.025f, new Renderer[] { sprite })
+                new LOD(.12f, lod0.ToArray()),
+                new LOD(.025f, lod1.ToArray()),
+                new LOD(.003f, new Renderer[] { sprite })
             });
             group.fadeMode = LODFadeMode.CrossFade;
             group.animateCrossFading = true;
@@ -143,6 +149,9 @@ namespace FrostboundFrontier.EditorTools
             Texture2D albedo = AssetDatabase.LoadAssetAtPath<Texture2D>(AlbedoPath);
             material.mainTexture = albedo;
             if (material.HasProperty("_BaseMap")) material.SetTexture("_BaseMap", albedo);
+            if (material.HasProperty("_BaseColor")) material.SetColor("_BaseColor", new Color(1.12f, 1.08f, 1f, 1f));
+            material.EnableKeyword("_EMISSION");
+            if (material.HasProperty("_EmissionColor")) material.SetColor("_EmissionColor", new Color(.07f, .1f, .14f, 1f));
             if (material.HasProperty("_Smoothness")) material.SetFloat("_Smoothness", .18f);
             if (material.HasProperty("_Metallic")) material.SetFloat("_Metallic", 0f);
             AssetDatabase.CreateAsset(material, MaterialPath);
@@ -154,8 +163,9 @@ namespace FrostboundFrontier.EditorTools
             string absolutePrefab = Path.GetFullPath(PrefabPath);
             string report =
                 $"Frostbound Frontier - Meshy City Optimization\n" +
-                $"Tile footprint: 0.88 x 0.88 units (1 tile)\n" +
+                $"Tile footprint: 0.88 x 0.88 units (1 tile), vertical scale 1.60\n" +
                 $"Texture Android: 1024px ASTC 6x6\n" +
+                $"LOD thresholds: 0.12 / 0.025 / 0.003\n" +
                 $"LOD0: {lod0Vertices:N0} vertices / {lod0Triangles:N0} triangles\n" +
                 $"LOD1: {lod1Vertices:N0} vertices / {lod1Triangles:N0} triangles\n" +
                 $"LOD2: 1 SpriteRenderer quad\n" +
