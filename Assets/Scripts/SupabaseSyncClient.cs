@@ -1,0 +1,465 @@
+using System;
+using System.Collections;
+using System.Collections.Generic;
+using System.Globalization;
+using System.Text;
+using UnityEngine;
+using UnityEngine.Networking;
+
+namespace FrostboundFrontier
+{
+    public sealed class SupabaseSyncClient : MonoBehaviour
+    {
+        private const string ProjectUrl = "https://qbqfysphnotknygiurnj.supabase.co";
+        private const string PublishableKey = "sb_publishable_eGBJKJ4m5h5HNKzCehcVdQ_jY-W13ai";
+        private const string AccessTokenKey = "frostbound-supabase-access-token";
+        private const string RefreshTokenKey = "frostbound-supabase-refresh-token";
+        private const string UserIdKey = "frostbound-supabase-user-id";
+
+        public static SupabaseSyncClient Instance { get; private set; }
+        public static string Status { get; private set; } = "NUBE: INICIANDO";
+        public bool CanQueryWorld => HasSession;
+        public string CurrentUserId => userId;
+
+        private string accessToken;
+        private string refreshToken;
+        private string userId;
+        private bool requestInProgress;
+        private float syncClock;
+
+        [Serializable] private sealed class AuthUser { public string id; }
+        [Serializable] private sealed class AuthResponse { public string access_token; public string refresh_token; public AuthUser user; }
+        [Serializable] private sealed class AnonymousMetadata { public string game = "frostbound_frontier"; }
+        [Serializable] private sealed class AnonymousRequest { public AnonymousMetadata data = new AnonymousMetadata(); }
+        [Serializable] private sealed class RefreshRequest { public string refresh_token; }
+        [Serializable] private sealed class EmergencySavePayload { public string user_id; public string save_json; public long client_saved_at; }
+        [Serializable] private sealed class RelationalPlayerPayload
+        {
+            public string user_id;
+            public string display_name;
+            public float temperature;
+            public int population;
+            public long wood;
+            public long food;
+            public long coal;
+            public int generator_level;
+            public float health;
+            public float happiness;
+            public long power;
+            public long client_saved_at;
+            public int snow_infantry;
+            public long crystals;
+            public int speedups;
+        }
+        [Serializable] private sealed class RelationalPlayerRow
+        {
+            public string display_name;
+            public float temperature;
+            public int population;
+            public long wood;
+            public long food;
+            public long coal;
+            public int generator_level;
+            public float health;
+            public float happiness;
+            public long power;
+            public long client_saved_at;
+            public int snow_infantry;
+            public long crystals;
+            public int speedups;
+        }
+        [Serializable] private sealed class RelationalPlayerRows { public RelationalPlayerRow[] items; }
+        [Serializable] private sealed class RelationalBuildingRow
+        {
+            public string slot_id;
+            public string building_type;
+            public int level;
+            public int assigned_workers;
+            public string upgrade_started_at;
+            public string finishes_at;
+            public float pos_x;
+            public float pos_z;
+        }
+        [Serializable] private sealed class RelationalBuildingRows { public RelationalBuildingRow[] items; }
+        [Serializable] public sealed class MarchCloudState
+        {
+            public string id;
+            public int origin_x;
+            public int origin_y;
+            public int target_x;
+            public int target_y;
+            public string march_type;
+            public string res_type;
+            public int payload_amount;
+            public string departure_time;
+            public string arrival_time;
+            public string status;
+            public int troop_count;
+            public string hero_id;
+            public string hero_key;
+            public float hero_power_bonus;
+            public float hero_speed_bonus;
+        }
+        [Serializable] public sealed class BeastBattleResult
+        {
+            public bool victory;
+            public int casualties;
+            public int wounded;
+            public string loot_type;
+            public int loot_amount;
+            public int power_used;
+        }
+        [Serializable] public sealed class HeroCloudState
+        {
+            public string hero_id;
+            public string hero_key;
+            public int level;
+            public int star_level;
+            public float power_bonus;
+            public float march_speed_bonus;
+        }
+        [Serializable] public sealed class HospitalCloudState
+        {
+            public int wounded;
+            public int healing_amount;
+            public string healing_started_at;
+            public string healing_finishes_at;
+            public int food_cost;
+            public int completed;
+        }
+
+        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSceneLoad)]
+        private static void Install()
+        {
+            if (Instance == null) new GameObject(nameof(SupabaseSyncClient)).AddComponent<SupabaseSyncClient>();
+        }
+
+        private void Awake()
+        {
+            if (Instance != null && Instance != this) { Destroy(gameObject); return; }
+            Instance = this;
+            DontDestroyOnLoad(gameObject);
+            accessToken = PlayerPrefs.GetString(AccessTokenKey, string.Empty);
+            refreshToken = PlayerPrefs.GetString(RefreshTokenKey, string.Empty);
+            userId = PlayerPrefs.GetString(UserIdKey, string.Empty);
+        }
+
+        private IEnumerator Start()
+        {
+            yield return new WaitUntil(() => FindAnyObjectByType<FrostboundFrontierPrototype>() != null);
+            if (HasSession) yield return LoadRelationalThenSync();
+            else yield return SignInAnonymously();
+        }
+
+        private void Update()
+        {
+            if (!HasSession || requestInProgress) return;
+            syncClock += Time.unscaledDeltaTime;
+            if (syncClock < 15f) return;
+            syncClock = 0f;
+            StartCoroutine(SyncRelationalAndBackup());
+        }
+
+        private bool HasSession => !string.IsNullOrWhiteSpace(accessToken) && !string.IsNullOrWhiteSpace(userId);
+
+        public IEnumerator FetchWorldTiles(int minX, int maxX, int minY, int maxY, Action<string> onSuccess, Action<string> onError)
+        {
+            if (!HasSession)
+            {
+                onError?.Invoke("Sin sesión: mostrando terreno local");
+                yield break;
+            }
+
+            string path = "/rest/v1/frostbound_world_tiles?select=id,x,y,tile_type,occupant_id,level,res_type,res_capacity,res_remaining,beast_kind,beast_power,beast_hp,beast_max_hp,reward_type,reward_amount,updated_at" +
+                "&x=gte." + minX + "&x=lte." + maxX + "&y=gte." + minY + "&y=lte." + maxY +
+                "&order=x.asc,y.asc";
+            using UnityWebRequest request = CreateRequest(path, UnityWebRequest.kHttpVerbGET, null, true);
+            yield return request.SendWebRequest();
+            if (IsSuccess(request)) onSuccess?.Invoke(request.downloadHandler.text);
+            else onError?.Invoke("Mapa remoto: " + request.responseCode);
+        }
+
+        public IEnumerator RelocateWorldCity(int targetX, int targetY, Action onSuccess, Action<string> onError)
+        {
+            if (!HasSession)
+            {
+                onError?.Invoke("Sin sesión de Supabase");
+                yield break;
+            }
+
+            string json = "{\"p_target_x\":" + targetX + ",\"p_target_y\":" + targetY + "}";
+            using UnityWebRequest request = CreateRequest(
+                "/rest/v1/rpc/frostbound_relocate_city",
+                UnityWebRequest.kHttpVerbPOST,
+                json,
+                true);
+            yield return request.SendWebRequest();
+            if (IsSuccess(request)) onSuccess?.Invoke();
+            else onError?.Invoke("Supabase " + request.responseCode + ": " + SafeError(request));
+        }
+
+        public IEnumerator SaveMarch(MarchCloudState march, Action onSuccess, Action<string> onError)
+        {
+            if (!HasSession)
+            {
+                onError?.Invoke("Sin sesión de Supabase");
+                yield break;
+            }
+            string json = JsonUtility.ToJson(march);
+            if (string.IsNullOrWhiteSpace(march.res_type)) json = json.Replace("\"res_type\":\"\"", "\"res_type\":null");
+            if (string.IsNullOrWhiteSpace(march.hero_id)) json = json.Replace("\"hero_id\":\"\"", "\"hero_id\":null");
+            json = json.Insert(1, "\"user_id\":\"" + userId + "\",");
+            using UnityWebRequest request = CreateUpsert("/rest/v1/frostbound_marches?on_conflict=id", json);
+            yield return request.SendWebRequest();
+            if (IsSuccess(request)) onSuccess?.Invoke();
+            else onError?.Invoke("Marcha remota " + request.responseCode + ": " + SafeError(request));
+        }
+
+        public IEnumerator CompleteGatherMarch(string marchId, Action<int> onSuccess, Action<string> onError)
+        {
+            if (!HasSession) { onError?.Invoke("Sin sesión de Supabase"); yield break; }
+            string json = "{\"p_march_id\":\"" + marchId + "\"}";
+            using UnityWebRequest request = CreateRequest("/rest/v1/rpc/frostbound_complete_gather_march", UnityWebRequest.kHttpVerbPOST, json, true);
+            yield return request.SendWebRequest();
+            if (IsSuccess(request) && int.TryParse(request.downloadHandler.text, out int delivered)) onSuccess?.Invoke(delivered);
+            else onError?.Invoke("Finalización atómica " + request.responseCode + ": " + SafeError(request));
+        }
+
+        public IEnumerator ProcessBeastBattle(string marchId, Action<BeastBattleResult> onSuccess, Action<string> onError)
+        {
+            if (!HasSession) { onError?.Invoke("Sin sesión de Supabase"); yield break; }
+            string json = "{\"p_march_id\":\"" + marchId + "\"}";
+            using UnityWebRequest request = CreateRequest("/rest/v1/rpc/frostbound_process_beast_battle", UnityWebRequest.kHttpVerbPOST, json, true);
+            yield return request.SendWebRequest();
+            if (IsSuccess(request)) onSuccess?.Invoke(JsonUtility.FromJson<BeastBattleResult>(request.downloadHandler.text));
+            else onError?.Invoke("Batalla PVE " + request.responseCode + ": " + SafeError(request));
+        }
+
+        public IEnumerator InitializeHito6(Action<HeroCloudState> onSuccess, Action<string> onError)
+        {
+            if (!HasSession) { onError?.Invoke("Sin sesión de Supabase"); yield break; }
+            using UnityWebRequest request = CreateRequest("/rest/v1/rpc/frostbound_initialize_hito6", UnityWebRequest.kHttpVerbPOST, "{}", true);
+            yield return request.SendWebRequest();
+            if (IsSuccess(request)) onSuccess?.Invoke(JsonUtility.FromJson<HeroCloudState>(request.downloadHandler.text));
+            else onError?.Invoke("Inicialización Hito 6 " + request.responseCode + ": " + SafeError(request));
+        }
+
+        public IEnumerator FetchHospital(Action<HospitalCloudState> onSuccess, Action<string> onError)
+        {
+            if (!HasSession) { onError?.Invoke("Sin sesión de Supabase"); yield break; }
+            using UnityWebRequest request = CreateRequest("/rest/v1/frostbound_hospital?select=wounded_infantry,healing_amount,healing_started_at,healing_finishes_at&limit=1", UnityWebRequest.kHttpVerbGET, null, true);
+            yield return request.SendWebRequest();
+            if (!IsSuccess(request)) { onError?.Invoke("Enfermería " + request.responseCode + ": " + SafeError(request)); yield break; }
+            string json = request.downloadHandler.text.Replace("wounded_infantry", "wounded");
+            HospitalRows rows = ParseArray<HospitalRows>(json);
+            onSuccess?.Invoke(rows?.items != null && rows.items.Length > 0 ? rows.items[0] : new HospitalCloudState());
+        }
+
+        [Serializable] private sealed class HospitalRows { public HospitalCloudState[] items; }
+
+        public IEnumerator StartHealing(int amount, Action<HospitalCloudState> onSuccess, Action<string> onError)
+        {
+            if (!HasSession) { onError?.Invoke("Sin sesión de Supabase"); yield break; }
+            using UnityWebRequest request = CreateRequest("/rest/v1/rpc/frostbound_start_healing", UnityWebRequest.kHttpVerbPOST, "{\"p_amount\":" + amount + "}", true);
+            yield return request.SendWebRequest();
+            if (IsSuccess(request)) onSuccess?.Invoke(JsonUtility.FromJson<HospitalCloudState>(request.downloadHandler.text));
+            else onError?.Invoke("Curación " + request.responseCode + ": " + SafeError(request));
+        }
+
+        public IEnumerator CompleteHealing(Action<HospitalCloudState> onSuccess, Action<string> onError)
+        {
+            if (!HasSession) { onError?.Invoke("Sin sesión de Supabase"); yield break; }
+            using UnityWebRequest request = CreateRequest("/rest/v1/rpc/frostbound_complete_healing", UnityWebRequest.kHttpVerbPOST, "{}", true);
+            yield return request.SendWebRequest();
+            if (IsSuccess(request)) onSuccess?.Invoke(JsonUtility.FromJson<HospitalCloudState>(request.downloadHandler.text));
+            else onError?.Invoke("Finalizar curación " + request.responseCode + ": " + SafeError(request));
+        }
+
+        private IEnumerator SignInAnonymously()
+        {
+            requestInProgress = true;
+            Status = "NUBE: CONECTANDO";
+            using UnityWebRequest request = CreateRequest("/auth/v1/signup", UnityWebRequest.kHttpVerbPOST,
+                JsonUtility.ToJson(new AnonymousRequest()), false);
+            yield return request.SendWebRequest();
+            requestInProgress = false;
+            if (!IsSuccess(request)) { Status = "NUBE: LOCAL"; Debug.LogWarning("Supabase anonymous sign-in failed: " + SafeError(request)); yield break; }
+            AuthResponse response = JsonUtility.FromJson<AuthResponse>(request.downloadHandler.text);
+            if (response?.user == null || string.IsNullOrWhiteSpace(response.access_token)) { Status = "NUBE: ERROR AUTH"; yield break; }
+            accessToken = response.access_token;
+            refreshToken = response.refresh_token;
+            userId = response.user.id;
+            PersistSession();
+            yield return LoadRelationalThenSync();
+        }
+
+        private IEnumerator LoadRelationalThenSync()
+        {
+            requestInProgress = true;
+            Status = "NUBE: CARGANDO";
+            using UnityWebRequest playerRequest = CreateRequest(
+                "/rest/v1/frostbound_players?select=display_name,temperature,population,wood,food,coal,generator_level,health,happiness,power,client_saved_at,snow_infantry,crystals,speedups&limit=1",
+                UnityWebRequest.kHttpVerbGET, null, true);
+            yield return playerRequest.SendWebRequest();
+            if (playerRequest.responseCode == 401) { requestInProgress = false; yield return RefreshSession(); yield break; }
+            if (!IsSuccess(playerRequest)) { requestInProgress = false; Fail("Relational player load", playerRequest); yield break; }
+
+            using UnityWebRequest buildingRequest = CreateRequest(
+                "/rest/v1/frostbound_buildings?select=slot_id,building_type,level,assigned_workers,upgrade_started_at,finishes_at,pos_x,pos_z&order=slot_id",
+                UnityWebRequest.kHttpVerbGET, null, true);
+            yield return buildingRequest.SendWebRequest();
+            requestInProgress = false;
+            if (!IsSuccess(buildingRequest)) { Fail("Relational building load", buildingRequest); yield break; }
+
+            RelationalPlayerRows players = ParseArray<RelationalPlayerRows>(playerRequest.downloadHandler.text);
+            RelationalBuildingRows buildingRows = ParseArray<RelationalBuildingRows>(buildingRequest.downloadHandler.text);
+            FrostboundFrontierPrototype game = FindAnyObjectByType<FrostboundFrontierPrototype>();
+            if (players?.items != null && players.items.Length > 0 && players.items[0].client_saved_at > game.LocalSavedAtUtcTicks)
+                game.ApplyRelationalCloudState(ToGamePlayer(players.items[0]), ToGameBuildings(buildingRows?.items));
+            yield return InitializeHito6(game.ApplyHeroCloudState, error => Debug.LogWarning(error));
+            yield return FetchHospital(game.ApplyHospitalCloudState, error => Debug.LogWarning(error));
+            yield return SyncRelationalAndBackup();
+        }
+
+        private IEnumerator SyncRelationalAndBackup()
+        {
+            if (requestInProgress || !HasSession) yield break;
+            FrostboundFrontierPrototype game = FindAnyObjectByType<FrostboundFrontierPrototype>();
+            if (game == null) yield break;
+            requestInProgress = true;
+            Status = "NUBE: SINCRONIZANDO";
+
+            FrostboundFrontierPrototype.PlayerCloudState player = game.GetPlayerCloudState();
+            RelationalPlayerPayload playerPayload = new RelationalPlayerPayload
+            {
+                user_id = userId, display_name = player.displayName, temperature = player.temperature,
+                population = player.population, wood = player.wood, food = player.food, coal = player.coal,
+                generator_level = player.generatorLevel, health = player.health, happiness = player.happiness,
+                power = player.power, client_saved_at = player.clientSavedAt, snow_infantry = player.snowInfantry,
+                crystals = player.crystals, speedups = player.speedups
+            };
+            using UnityWebRequest playerRequest = CreateUpsert("/rest/v1/frostbound_players?on_conflict=user_id", JsonUtility.ToJson(playerPayload));
+            yield return playerRequest.SendWebRequest();
+            if (!IsSuccess(playerRequest)) { requestInProgress = false; if (playerRequest.responseCode == 401) yield return RefreshSession(); else Fail("Relational player save", playerRequest); yield break; }
+
+            using UnityWebRequest buildingsRequest = CreateUpsert(
+                "/rest/v1/frostbound_buildings?on_conflict=user_id,slot_id", BuildBuildingsJson(game.GetBuildingCloudStates()));
+            yield return buildingsRequest.SendWebRequest();
+            if (!IsSuccess(buildingsRequest)) { requestInProgress = false; Fail("Relational building save", buildingsRequest); yield break; }
+
+            string leaderboardJson = "{\"user_id\":\"" + userId + "\",\"display_name\":\"SUPERVIVIENTE\",\"generator_level\":" +
+                player.generatorLevel + ",\"power\":" + player.power + "}";
+            using UnityWebRequest leaderboardRequest = CreateUpsert("/rest/v1/frostbound_leaderboard?on_conflict=user_id", leaderboardJson);
+            yield return leaderboardRequest.SendWebRequest();
+            if (!IsSuccess(leaderboardRequest)) { requestInProgress = false; Fail("Leaderboard save", leaderboardRequest); yield break; }
+
+            EmergencySavePayload backup = new EmergencySavePayload
+            {
+                user_id = userId, save_json = game.ExportCloudSaveJson(), client_saved_at = game.LocalSavedAtUtcTicks
+            };
+            using UnityWebRequest backupRequest = CreateUpsert("/rest/v1/frostbound_saves?on_conflict=user_id", JsonUtility.ToJson(backup));
+            yield return backupRequest.SendWebRequest();
+            requestInProgress = false;
+            Status = IsSuccess(backupRequest) ? "NUBE: RELACIONAL" : "NUBE: BACKUP ERROR";
+            if (!IsSuccess(backupRequest)) Debug.LogWarning("Emergency backup failed: " + SafeError(backupRequest));
+        }
+
+        private IEnumerator RefreshSession()
+        {
+            if (string.IsNullOrWhiteSpace(refreshToken)) { ClearSession(); yield return SignInAnonymously(); yield break; }
+            requestInProgress = true;
+            Status = "NUBE: RENOVANDO";
+            using UnityWebRequest request = CreateRequest("/auth/v1/token?grant_type=refresh_token", UnityWebRequest.kHttpVerbPOST,
+                JsonUtility.ToJson(new RefreshRequest { refresh_token = refreshToken }), false);
+            yield return request.SendWebRequest();
+            requestInProgress = false;
+            if (!IsSuccess(request)) { ClearSession(); yield return SignInAnonymously(); yield break; }
+            AuthResponse response = JsonUtility.FromJson<AuthResponse>(request.downloadHandler.text);
+            accessToken = response.access_token;
+            refreshToken = response.refresh_token;
+            if (response.user != null) userId = response.user.id;
+            PersistSession();
+            yield return LoadRelationalThenSync();
+        }
+
+        private static T ParseArray<T>(string json) => JsonUtility.FromJson<T>("{\"items\":" + json + "}");
+
+        private static FrostboundFrontierPrototype.PlayerCloudState ToGamePlayer(RelationalPlayerRow row)
+        {
+            return new FrostboundFrontierPrototype.PlayerCloudState
+            {
+                displayName = row.display_name, temperature = row.temperature, population = row.population,
+                wood = row.wood, food = row.food, coal = row.coal, generatorLevel = row.generator_level,
+                health = row.health, happiness = row.happiness, power = row.power, clientSavedAt = row.client_saved_at,
+                snowInfantry = row.snow_infantry, crystals = row.crystals, speedups = row.speedups
+            };
+        }
+
+        private static FrostboundFrontierPrototype.BuildingCloudState[] ToGameBuildings(RelationalBuildingRow[] rows)
+        {
+            if (rows == null) return Array.Empty<FrostboundFrontierPrototype.BuildingCloudState>();
+            FrostboundFrontierPrototype.BuildingCloudState[] result = new FrostboundFrontierPrototype.BuildingCloudState[rows.Length];
+            for (int i = 0; i < rows.Length; i++)
+            {
+                RelationalBuildingRow row = rows[i];
+                result[i] = new FrostboundFrontierPrototype.BuildingCloudState
+                {
+                    slotId = row.slot_id, buildingType = row.building_type, level = row.level,
+                    assignedWorkers = row.assigned_workers, upgradeStartedUtcTicks = ParseUtcTicks(row.upgrade_started_at),
+                    finishesUtcTicks = ParseUtcTicks(row.finishes_at), posX = row.pos_x, posZ = row.pos_z
+                };
+            }
+            return result;
+        }
+
+        private string BuildBuildingsJson(FrostboundFrontierPrototype.BuildingCloudState[] rows)
+        {
+            List<string> jsonRows = new List<string>(rows.Length);
+            foreach (FrostboundFrontierPrototype.BuildingCloudState row in rows)
+                jsonRows.Add("{\"user_id\":\"" + userId + "\",\"slot_id\":\"" + row.slotId +
+                    "\",\"building_type\":\"" + row.buildingType + "\",\"level\":" + row.level +
+                    ",\"assigned_workers\":" + row.assignedWorkers + ",\"upgrade_started_at\":" + ToNullableIso(row.upgradeStartedUtcTicks) +
+                    ",\"finishes_at\":" + ToNullableIso(row.finishesUtcTicks) + ",\"pos_x\":" + row.posX.ToString(CultureInfo.InvariantCulture) +
+                    ",\"pos_z\":" + row.posZ.ToString(CultureInfo.InvariantCulture) + "}");
+            return "[" + string.Join(",", jsonRows) + "]";
+        }
+
+        private static string ToNullableIso(long ticks) => ticks <= 0 ? "null" : "\"" + new DateTime(ticks, DateTimeKind.Utc).ToString("O", CultureInfo.InvariantCulture) + "\"";
+        private static long ParseUtcTicks(string value) => !string.IsNullOrWhiteSpace(value) && DateTime.TryParse(value, CultureInfo.InvariantCulture, DateTimeStyles.AdjustToUniversal, out DateTime parsed) ? parsed.ToUniversalTime().Ticks : 0;
+
+        private static UnityWebRequest CreateUpsert(string path, string json)
+        {
+            UnityWebRequest request = CreateRequest(path, UnityWebRequest.kHttpVerbPOST, json, true);
+            request.SetRequestHeader("Prefer", "resolution=merge-duplicates,return=minimal");
+            return request;
+        }
+
+        private static UnityWebRequest CreateRequest(string path, string method, string json, bool useSession)
+        {
+            UnityWebRequest request = new UnityWebRequest(ProjectUrl + path, method) { downloadHandler = new DownloadHandlerBuffer(), timeout = 15 };
+            if (json != null) request.uploadHandler = new UploadHandlerRaw(Encoding.UTF8.GetBytes(json));
+            request.SetRequestHeader("Content-Type", "application/json");
+            request.SetRequestHeader("apikey", PublishableKey);
+            if (useSession && Instance != null && !string.IsNullOrWhiteSpace(Instance.accessToken)) request.SetRequestHeader("Authorization", "Bearer " + Instance.accessToken);
+            return request;
+        }
+
+        private void PersistSession()
+        {
+            PlayerPrefs.SetString(AccessTokenKey, accessToken ?? string.Empty);
+            PlayerPrefs.SetString(RefreshTokenKey, refreshToken ?? string.Empty);
+            PlayerPrefs.SetString(UserIdKey, userId ?? string.Empty);
+            PlayerPrefs.Save();
+        }
+
+        private void ClearSession()
+        {
+            accessToken = refreshToken = userId = string.Empty;
+            PlayerPrefs.DeleteKey(AccessTokenKey); PlayerPrefs.DeleteKey(RefreshTokenKey); PlayerPrefs.DeleteKey(UserIdKey);
+        }
+
+        private static void Fail(string operation, UnityWebRequest request) { Status = "NUBE: ERROR"; Debug.LogWarning(operation + " failed: " + SafeError(request)); }
+        private static bool IsSuccess(UnityWebRequest request) => request.result == UnityWebRequest.Result.Success && request.responseCode >= 200 && request.responseCode < 300;
+        private static string SafeError(UnityWebRequest request) => string.IsNullOrWhiteSpace(request.downloadHandler?.text) ? request.error : request.downloadHandler.text;
+    }
+}
