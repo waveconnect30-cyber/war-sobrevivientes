@@ -77,6 +77,7 @@ namespace FrostboundFrontier
         private Camera mapCamera;
         private GameObject mapRoot;
         private GameObject worldBackdrop;
+        private GameObject allianceTerritoryRoot;
         private Vector3 colonyCameraPosition;
         private Quaternion colonyCameraRotation;
         private bool colonyOrthographic;
@@ -96,6 +97,10 @@ namespace FrostboundFrontier
         private bool relocationMode;
         private bool relocationConfirmationOpen;
         private bool relocationRequestPending;
+        private bool alliancePlacementMode;
+        private bool alliancePlacementConfirmationOpen;
+        private bool alliancePlacementPending;
+        private Vector2Int alliancePlacementCoordinate = new Vector2Int(-1, -1);
         private bool cinematicZoomActive;
         private float cinematicZoomStartedAt;
         private float cinematicStartZoom;
@@ -135,6 +140,7 @@ namespace FrostboundFrontier
         private Material selectionMaterial;
         private Material validRelocationMaterial;
         private Material invalidRelocationMaterial;
+        private Material allianceTerritoryMaterial;
         private LocalMarch activeMarch;
         private GameObject marchVisual;
         private int troopsToSend = 5;
@@ -161,6 +167,8 @@ namespace FrostboundFrontier
             mapCamera = prototype.WorldCamera;
             mapRoot = new GameObject("Virtual World Map Chunks");
             mapRoot.SetActive(false);
+            allianceTerritoryRoot = new GameObject("Alliance Territory Overlays");
+            allianceTerritoryRoot.transform.SetParent(mapRoot.transform, false);
             CreateMaterials();
             CreateWorldBackdrop();
             LoadLocalMarch();
@@ -247,6 +255,28 @@ namespace FrostboundFrontier
             selectionPanelPointerCaptured = false;
             if (relocationPreview != null) relocationPreview.SetActive(false);
             cinematicZoomActive = false;
+            alliancePlacementMode = false;
+            alliancePlacementConfirmationOpen = false;
+            alliancePlacementPending = false;
+            alliancePlacementCoordinate = new Vector2Int(-1, -1);
+        }
+
+        public void BeginAllianceHQPlacement()
+        {
+            if (!AllianceManager.CanBuildTerritory)
+            {
+                actionMessage = "SOLO LÍDERES U OFICIALES PUEDEN CONSTRUIR";
+                actionMessageUntil = Time.unscaledTime + 4f;
+                return;
+            }
+            if (!IsWorldMapActive) ToggleWorldMap();
+            ResetRelocationStateSilently();
+            ClearSelection();
+            alliancePlacementMode = true;
+            Vector2Int city = GetCityCoordinate();
+            SetAlliancePlacementCandidate(Mathf.Clamp(city.x + 3, 0, MapSize - 1), city.y);
+            actionMessage = "TOCA UNA TILE VACÍA PARA DESPLEGAR EL HQ";
+            actionMessageUntil = Time.unscaledTime + 5f;
         }
 
         private bool IsMaximumZoomOut => mapCamera != null && mapCamera.orthographicSize >= WorldMaxZoom - 0.25f;
@@ -383,8 +413,20 @@ namespace FrostboundFrontier
                 if (new Rect(logicalWidth * 0.5f - 310f, logicalHeight - 166f, 620f, 94f).Contains(guiPoint)) return true;
                 if (relocationConfirmationOpen && new Rect(logicalWidth * 0.5f - 235f, logicalHeight * 0.5f - 105f, 470f, 210f).Contains(guiPoint)) return true;
             }
+            if (alliancePlacementMode)
+            {
+                if (new Rect(logicalWidth * 0.5f - 310f, logicalHeight - 166f, 620f, 94f).Contains(guiPoint)) return true;
+                if (alliancePlacementConfirmationOpen && new Rect(logicalWidth * 0.5f - 235f, logicalHeight * 0.5f - 105f, 470f, 210f).Contains(guiPoint)) return true;
+            }
             if (selectedCoordinate.x < 0) return false;
-            return new Rect(logicalWidth * 0.5f - 245f, 98f, 490f, 344f).Contains(guiPoint);
+            float cardHeight = 344f;
+            if (visibleTiles.TryGetValue(selectedCoordinate, out TileVisual selected) && selected?.data != null)
+            {
+                bool rallyTarget = selected.data.tile_type == "Fortress" || (selected.data.tile_type == "Beast" && selected.data.level >= 2);
+                if (selected.data.tile_type == "ResourceNode" || selected.data.tile_type == "Beast")
+                    cardHeight = 452f;
+            }
+            return new Rect(logicalWidth * 0.5f - 245f, 98f, 490f, cardHeight).Contains(guiPoint);
         }
 
         private void RefreshChunkIfNeeded()
@@ -409,8 +451,52 @@ namespace FrostboundFrontier
 
             SupabaseSyncClient cloud = SupabaseSyncClient.Instance;
             if (cloud != null && cloud.CanQueryWorld)
+            {
                 StartCoroutine(cloud.FetchWorldTiles(minX, maxX, minY, maxY, ApplyRemoteTiles, error => mapStatus = error));
+                StartCoroutine(cloud.FetchAllianceStructures(Mathf.Max(0, minX - 12), Mathf.Min(MapSize - 1, maxX + 12),
+                    Mathf.Max(0, minY - 12), Mathf.Min(MapSize - 1, maxY + 12), ApplyAllianceStructures, error => mapStatus = error));
+            }
             else mapStatus = "TERRENO LOCAL · SIN SESIÓN";
+        }
+
+        private void ApplyAllianceStructures(SupabaseSyncClient.AllianceStructureCloudState[] rows)
+        {
+            if (allianceTerritoryRoot == null) return;
+            for (int i = allianceTerritoryRoot.transform.childCount - 1; i >= 0; i--)
+                Destroy(allianceTerritoryRoot.transform.GetChild(i).gameObject);
+            foreach (SupabaseSyncClient.AllianceStructureCloudState row in rows)
+            {
+                CreateTerritoryBorder(row);
+                CreateAllianceStructureMarker(row);
+            }
+        }
+
+        private void CreateTerritoryBorder(SupabaseSyncClient.AllianceStructureCloudState row)
+        {
+            float radius = Mathf.Max(1, row.territory_radius) * TileSize + TileSize * .5f;
+            Vector3 center = CoordinateToWorld(row.x, row.y) + Vector3.up * .16f;
+            GameObject border = new GameObject("[" + AllianceManager.LocalTag + "] Territory " + row.x + "," + row.y);
+            border.transform.SetParent(allianceTerritoryRoot.transform, false);
+            LineRenderer line = border.AddComponent<LineRenderer>();
+            line.loop = true;
+            line.positionCount = 4;
+            line.useWorldSpace = true;
+            line.widthMultiplier = .12f;
+            line.sharedMaterial = allianceTerritoryMaterial;
+            line.startColor = line.endColor = new Color(.08f, .95f, 1f, 1f);
+            line.SetPositions(new[] { center + new Vector3(-radius,0f,-radius), center + new Vector3(-radius,0f,radius),
+                center + new Vector3(radius,0f,radius), center + new Vector3(radius,0f,-radius) });
+        }
+
+        private void CreateAllianceStructureMarker(SupabaseSyncClient.AllianceStructureCloudState row)
+        {
+            GameObject marker = GameObject.CreatePrimitive(row.structure_type == "HQ" ? PrimitiveType.Cylinder : PrimitiveType.Cube);
+            marker.name = "Alliance " + row.structure_type + " " + row.x + "," + row.y;
+            marker.transform.SetParent(allianceTerritoryRoot.transform, false);
+            marker.transform.position = CoordinateToWorld(row.x, row.y) + new Vector3(0f, 1.05f, 0f);
+            marker.transform.localScale = row.structure_type == "HQ" ? new Vector3(1.05f,.85f,1.05f) : new Vector3(.4f,1.5f,.4f);
+            marker.GetComponent<Renderer>().sharedMaterial = allianceTerritoryMaterial;
+            Destroy(marker.GetComponent<Collider>());
         }
 
         private void CullAndCreate(int minX, int maxX, int minY, int maxY)
@@ -749,6 +835,11 @@ namespace FrostboundFrontier
                 SetRelocationCandidate(x, y);
                 return;
             }
+            if (alliancePlacementMode)
+            {
+                SetAlliancePlacementCandidate(x, y);
+                return;
+            }
             selectedCoordinate = new Vector2Int(x, y);
             ShowSelectionHighlight(x, y);
         }
@@ -762,6 +853,54 @@ namespace FrostboundFrontier
             SetRelocationCandidate(target.x, target.y);
             actionMessage = "TOCA UNA TILE PARA MOVER LA VISTA PREVIA DE TU BASE";
             actionMessageUntil = Time.unscaledTime + 4f;
+        }
+
+        private void SetAlliancePlacementCandidate(int x, int y)
+        {
+            alliancePlacementCoordinate = new Vector2Int(x, y);
+            alliancePlacementConfirmationOpen = false;
+            ShowSelectionHighlight(x, y);
+        }
+
+        private bool IsAlliancePlacementValid()
+        {
+            return visibleTiles.TryGetValue(alliancePlacementCoordinate, out TileVisual visual) &&
+                visual.data != null && visual.data.tile_type == "Empty";
+        }
+
+        private void CancelAlliancePlacement()
+        {
+            alliancePlacementMode = false;
+            alliancePlacementConfirmationOpen = false;
+            alliancePlacementPending = false;
+            alliancePlacementCoordinate = new Vector2Int(-1, -1);
+            ClearSelection();
+            actionMessage = "DESPLIEGUE DE HQ CANCELADO";
+            actionMessageUntil = Time.unscaledTime + 2f;
+        }
+
+        private void ConfirmAlliancePlacement()
+        {
+            if (alliancePlacementPending || !IsAlliancePlacementValid()) return;
+            alliancePlacementPending = true;
+            Vector2Int target = alliancePlacementCoordinate;
+            StartCoroutine(SupabaseSyncClient.Instance.PlaceAllianceStructure("HQ", target.x, target.y, row =>
+            {
+                alliancePlacementPending = false;
+                alliancePlacementMode = false;
+                alliancePlacementConfirmationOpen = false;
+                ClearSelection();
+                actionMessage = "HQ DE ALIANZA ACTIVO · TERRITORIO RADIO " + row.territory_radius;
+                actionMessageUntil = Time.unscaledTime + 5f;
+                loadedChunk = new Vector2Int(int.MinValue, int.MinValue);
+                RefreshChunkIfNeeded();
+            }, error =>
+            {
+                alliancePlacementPending = false;
+                alliancePlacementConfirmationOpen = false;
+                actionMessage = error;
+                actionMessageUntil = Time.unscaledTime + 5f;
+            }));
         }
 
         private void SetRelocationCandidate(int x, int y)
@@ -968,9 +1107,10 @@ namespace FrostboundFrontier
                 StartGlobalView();
 
             if (relocationMode) DrawRelocationControls(width, height);
+            else if (alliancePlacementMode) DrawAlliancePlacementControls(width, height);
             else if (selectedCoordinate.x >= 0 && !IsMaximumZoomOut && !cinematicZoomActive) DrawSelectionPanel(width, height);
             if (battleReportOpen) DrawBattleReport(width, height);
-            if (IsMaximumZoomOut && !relocationMode) DrawMaximumZoomMarkers(scale, width, height);
+            if (IsMaximumZoomOut && !relocationMode && !alliancePlacementMode) DrawMaximumZoomMarkers(scale, width, height);
             if (Time.unscaledTime < actionMessageUntil)
                 GUI.Label(new Rect(width * 0.5f - 220f, 96f, 440f, 42f), actionMessage, coordinateStyle);
 
@@ -1043,6 +1183,32 @@ namespace FrostboundFrontier
                 ConfirmRelocation();
         }
 
+        private void DrawAlliancePlacementControls(float width, float height)
+        {
+            bool valid = IsAlliancePlacementValid();
+            Rect controls = new Rect(width * .5f - 310f, height - 166f, 620f, 94f);
+            Event guiEvent = Event.current;
+            if (guiEvent.type == EventType.MouseDown && controls.Contains(guiEvent.mousePosition)) selectionPanelPointerCaptured = true;
+            GUI.Box(new Rect(controls.x, controls.y, controls.width, 72f), GUIContent.none, bodyStyle);
+            GUI.Label(new Rect(width * .5f - 150f, height - 157f, 300f, 28f),
+                "HQ  X:" + alliancePlacementCoordinate.x + "  Y:" + alliancePlacementCoordinate.y, coordinateStyle);
+            GUIStyle cancelStyle = new GUIStyle(buttonStyle) { normal = { background = orangeButton } };
+            if (GUI.Button(new Rect(width * .5f - 292f, height - 126f, 220f, 54f), "CANCELAR", cancelStyle)) CancelAlliancePlacement();
+            GUI.enabled = valid && !alliancePlacementPending;
+            if (GUI.Button(new Rect(width * .5f + 72f, height - 126f, 220f, 54f), valid ? "CONSTRUIR HQ" : "TILE OCUPADA", buttonStyle))
+                alliancePlacementConfirmationOpen = true;
+            GUI.enabled = true;
+            if (!alliancePlacementConfirmationOpen) return;
+            Rect modal = new Rect(width * .5f - 235f, height * .5f - 105f, 470f, 210f);
+            if (guiEvent.type == EventType.MouseDown && modal.Contains(guiEvent.mousePosition)) selectionPanelPointerCaptured = true;
+            GUI.DrawTexture(modal, cardPanel);
+            GUI.Label(new Rect(modal.x + 32f, modal.y + 24f, modal.width - 64f, 42f), "¿DESPLEGAR HQ DE ALIANZA?", cardTitleStyle);
+            GUI.Label(new Rect(modal.x + 34f, modal.y + 72f, modal.width - 68f, 48f),
+                "Se reclamará un territorio cuadrado de radio 5 alrededor de X:" + alliancePlacementCoordinate.x + " Y:" + alliancePlacementCoordinate.y, cardBodyStyle);
+            if (GUI.Button(new Rect(modal.x + 28f, modal.y + 138f, 190f, 48f), "VOLVER", cancelStyle)) alliancePlacementConfirmationOpen = false;
+            if (GUI.Button(new Rect(modal.x + 252f, modal.y + 138f, 190f, 48f), alliancePlacementPending ? "CONSTRUYENDO..." : "CONFIRMAR", buttonStyle)) ConfirmAlliancePlacement();
+        }
+
         private void DrawSelectionPanel(float width, float height)
         {
             visibleTiles.TryGetValue(selectedCoordinate, out TileVisual visual);
@@ -1051,6 +1217,7 @@ namespace FrostboundFrontier
             string occupant = string.IsNullOrWhiteSpace(visual?.data?.occupant_id) ? "Ninguno" :
                 visual.data.occupant_id == SupabaseSyncClient.Instance?.CurrentUserId ? "Tu colonia" : "Otro superviviente";
 
+            bool rallyTarget = type == "Fortress" || (type == "Beast" && level >= 2);
             float panelHeight = type == "ResourceNode" || type == "Beast" ? 452f : 344f;
             Rect panel = new Rect(width * 0.5f - 245f, 98f, 490f, panelHeight);
             Event guiEvent = Event.current;
@@ -1086,8 +1253,18 @@ namespace FrostboundFrontier
                 actionY = panel.y + 374f;
             }
             string action = type == "Empty" ? "OCUPAR" : type == "ResourceNode" ? "RECOLECTAR" : "ATACAR";
-            if (GUI.Button(new Rect(panel.x + 24f, actionY, 210f, 56f), "REUBICAR", buttonStyle))
-                BeginRelocation();
+            string leftAction = rallyTarget && AllianceManager.HasAlliance ? "RALLY · 5 MIN" : "REUBICAR";
+            if (GUI.Button(new Rect(panel.x + 24f, actionY, 210f, 56f), leftAction, buttonStyle))
+            {
+                if (rallyTarget && AllianceManager.HasAlliance)
+                {
+                    AllianceManager.Instance.CreateRallyAt(selectedCoordinate.x, selectedCoordinate.y,
+                        type == "Beast" ? "EliteBeast" : "Facility", troopsToSend);
+                    ClearSelection();
+                }
+                else
+                    BeginRelocation();
+            }
             GUIStyle actionStyle = action == "ATACAR" ? new GUIStyle(buttonStyle) { normal = { background = orangeButton } } : buttonStyle;
             if (GUI.Button(new Rect(panel.x + 256f, actionY, 210f, 56f), action, actionStyle))
             {
@@ -1099,7 +1276,6 @@ namespace FrostboundFrontier
                     actionMessageUntil = Time.unscaledTime + 3f;
                 }
             }
-
         }
 
         private void DrawBattleReport(float width, float height)
@@ -1165,6 +1341,7 @@ namespace FrostboundFrontier
             selectionMaterial.SetColor("_EmissionColor", new Color(0.05f, 1.5f, 2f));
             validRelocationMaterial = NewMaterial(new Color(0.16f, 0.92f, 0.42f));
             invalidRelocationMaterial = NewMaterial(new Color(1f, 0.2f, 0.12f));
+            allianceTerritoryMaterial = NewMaterial(new Color(0.08f, 0.88f, 1f));
         }
 
         private void CreateWorldBackdrop()

@@ -11,10 +11,14 @@ namespace FrostboundFrontier
         public static AllianceManager Instance { get; private set; }
         public static string LocalTag { get; private set; } = string.Empty;
         public static bool IsPanelOpen => Instance != null && Instance.panelOpen;
+        public static bool HasAlliance => Instance != null && Instance.alliance != null;
+        public static bool CanBuildTerritory => Instance != null && Instance.alliance != null &&
+            (Instance.alliance.member_role == "Leader" || Instance.alliance.member_role == "Officer");
 
         private SupabaseSyncClient.AllianceCloudState alliance;
         private SupabaseSyncClient.AllianceSearchRow[] searchResults = Array.Empty<SupabaseSyncClient.AllianceSearchRow>();
         private SupabaseSyncClient.AllianceHelpRow[] helpRequests = Array.Empty<SupabaseSyncClient.AllianceHelpRow>();
+        private SupabaseSyncClient.RallyCloudState[] rallies = Array.Empty<SupabaseSyncClient.RallyCloudState>();
         private bool panelOpen;
         private bool busy;
         private string allianceName = "Guardianes del Hielo";
@@ -30,6 +34,7 @@ namespace FrostboundFrontier
         private Texture2D panelTexture;
         private Texture2D buttonTexture;
         private bool stylesReady;
+        private int rallyTroops = 5;
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
         private static void Install()
@@ -69,7 +74,7 @@ namespace FrostboundFrontier
             {
                 busy = false; alliance = result; LocalTag = result?.tag ?? string.Empty;
                 PlayerPrefs.SetString(TagKey, LocalTag); PlayerPrefs.Save();
-                if (alliance != null) RefreshHelp();
+                if (alliance != null) { RefreshHelp(); RefreshRallies(); }
             }, error => { busy = false; message = error; }));
         }
 
@@ -77,6 +82,27 @@ namespace FrostboundFrontier
         {
             if (SupabaseSyncClient.Instance == null || alliance == null) return;
             StartCoroutine(SupabaseSyncClient.Instance.FetchAllianceHelp(rows => helpRequests = rows, error => message = error));
+        }
+
+        private void RefreshRallies()
+        {
+            if (SupabaseSyncClient.Instance == null || alliance == null) return;
+            StartCoroutine(SupabaseSyncClient.Instance.FetchAllianceRallies(rows => rallies = rows, error => message = error));
+        }
+
+        public void CreateRallyAt(int x, int y, string targetType, int troops)
+        {
+            panelOpen = true;
+            if (alliance == null) { message = "Necesitas una alianza para iniciar un rally."; return; }
+            if (busy) return;
+            busy = true;
+            message = "Creando rally de 5 minutos...";
+            StartCoroutine(SupabaseSyncClient.Instance.CreateAllianceRally(x, y, targetType, troops, result =>
+            {
+                busy = false;
+                message = "Rally creado contra X:" + result.target_x + " Y:" + result.target_y + ".";
+                RefreshRallies();
+            }, error => { busy = false; message = error; }));
         }
 
         private void OnGUI()
@@ -133,9 +159,34 @@ namespace FrostboundFrontier
         {
             GUI.Label(new Rect(panel.x + 28f, panel.y + 116f, 664f, 46f), "[" + alliance.tag + "]  " + alliance.name, titleStyle);
             GUI.Label(new Rect(panel.x + 28f, panel.y + 164f, 664f, 34f), "Rango: " + alliance.member_role + "  ·  Poder: " + alliance.power_total, bodyStyle);
-            GUI.Label(new Rect(panel.x + 28f, panel.y + 210f, 500f, 34f), "SOLICITUDES DE AYUDA", titleStyle);
-            if (GUI.Button(new Rect(panel.x + 566f, panel.y + 206f, 126f, 38f), "ACTUALIZAR", buttonStyle)) RefreshHelp();
-            scroll = GUI.BeginScrollView(new Rect(panel.x + 28f, panel.y + 254f, 664f, 188f), scroll, new Rect(0f, 0f, 638f, Mathf.Max(170f, helpRequests.Length * 58f)));
+            GUI.enabled = CanBuildTerritory && !busy;
+            if (GUI.Button(new Rect(panel.x + 28f, panel.y + 202f, 246f, 40f), "DESPLEGAR HQ", buttonStyle))
+            {
+                panelOpen = false;
+                FindAnyObjectByType<WorldMapManager>()?.BeginAllianceHQPlacement();
+            }
+            GUI.enabled = true;
+            rallyTroops = Mathf.Clamp(rallyTroops, 1, 9999);
+            GUI.Label(new Rect(panel.x + 292f, panel.y + 202f, 155f, 40f), "RALLIES: " + rallies.Length, bodyStyle);
+            if (GUI.Button(new Rect(panel.x + 566f, panel.y + 202f, 126f, 40f), "ACTUALIZAR", buttonStyle)) { RefreshHelp(); RefreshRallies(); }
+            GUI.Label(new Rect(panel.x + 28f, panel.y + 248f, 316f, 30f), "RALLIES ACTIVOS · 5 MIN", titleStyle);
+            GUI.Label(new Rect(panel.x + 376f, panel.y + 248f, 260f, 30f), "AYUDAS DE TEMPORIZADOR", titleStyle);
+            scroll = GUI.BeginScrollView(new Rect(panel.x + 28f, panel.y + 282f, 316f, 160f), scroll, new Rect(0f, 0f, 292f, Mathf.Max(144f, rallies.Length * 64f)));
+            for (int i = 0; i < rallies.Length; i++)
+            {
+                SupabaseSyncClient.RallyCloudState row = rallies[i];
+                TimeSpan left = DateTime.TryParse(row.rally_starts_at, out DateTime starts) ? starts.ToUniversalTime() - DateTime.UtcNow : TimeSpan.Zero;
+                string timer = Mathf.Max(0, Mathf.CeilToInt((float)left.TotalSeconds / 60f)) + " min";
+                GUI.Label(new Rect(0f, i * 64f, 178f, 56f), (row.target_type == "EliteBeast" ? "BESTIA ELITE" : "INSTALACIÓN") +
+                    "\nX:" + row.target_x + " Y:" + row.target_y + " · " + timer, bodyStyle);
+                GUI.enabled = !busy && row.leader_id != SupabaseSyncClient.Instance.CurrentUserId;
+                if (GUI.Button(new Rect(184f, i * 64f + 7f, 100f, 42f), "UNIR " + rallyTroops, buttonStyle)) JoinRally(row.id);
+                GUI.enabled = true;
+            }
+            if (rallies.Length == 0) GUI.Label(new Rect(0f, 8f, 286f, 50f), "Selecciona una Bestia Nv.2 o Fortaleza y pulsa RALLY.", bodyStyle);
+            GUI.EndScrollView();
+            Vector2 helpScroll = Vector2.zero;
+            helpScroll = GUI.BeginScrollView(new Rect(panel.x + 376f, panel.y + 282f, 316f, 160f), helpScroll, new Rect(0f, 0f, 292f, Mathf.Max(144f, helpRequests.Length * 58f)));
             int visibleIndex = 0;
             for (int i = 0; i < helpRequests.Length; i++)
             {
@@ -144,11 +195,22 @@ namespace FrostboundFrontier
                 float y = visibleIndex++ * 58f;
                 string target = row.target_type == "HospitalHealing" ? "Curación en Enfermería" :
                     row.target_type == "Research" ? "Investigación: " + row.target_key : "Mejora: " + row.target_key.Replace("_01", "");
-                GUI.Label(new Rect(0f, y, 440f, 50f), target + "  ·  Ayudas " + row.help_count, bodyStyle);
-                if (GUI.Button(new Rect(470f, y + 5f, 150f, 40f), "AYUDAR", buttonStyle)) GiveHelp(row.id);
+                GUI.Label(new Rect(0f, y, 180f, 50f), target + "  ·  " + row.help_count, bodyStyle);
+                if (GUI.Button(new Rect(190f, y + 5f, 94f, 40f), "AYUDAR", buttonStyle)) GiveHelp(row.id);
             }
             if (visibleIndex == 0) GUI.Label(new Rect(0f, 12f, 620f, 44f), "No hay compañeros esperando ayuda.", bodyStyle);
             GUI.EndScrollView();
+        }
+
+        private void JoinRally(string rallyId)
+        {
+            busy = true;
+            StartCoroutine(SupabaseSyncClient.Instance.JoinAllianceRally(rallyId, rallyTroops, result =>
+            {
+                busy = false;
+                message = result.status == "Ready" ? "Tus tropas están listas en el rally." : "Tus tropas marchan hacia la ciudad líder.";
+                RefreshRallies();
+            }, error => { busy = false; message = error; }));
         }
 
         private void CreateAlliance()

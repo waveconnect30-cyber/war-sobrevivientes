@@ -174,6 +174,48 @@ namespace FrostboundFrontier
         }
         [Serializable] private sealed class ResearchRows { public ResearchCloudState[] items; }
         [Serializable] private sealed class ResearchRequest { public string p_tech_id; }
+        [Serializable] public sealed class AllianceStructureCloudState
+        {
+            public string id;
+            public string alliance_id;
+            public string structure_type;
+            public int x;
+            public int y;
+            public string status;
+            public int territory_radius;
+            public string created_by;
+            public string updated_at;
+        }
+        [Serializable] public sealed class RallyCloudState
+        {
+            public string id;
+            public string alliance_id;
+            public string leader_id;
+            public int target_x;
+            public int target_y;
+            public string target_type;
+            public string status;
+            public string rally_starts_at;
+            public int member_count;
+            public int troop_total;
+        }
+        [Serializable] public sealed class RallyJoinCloudState
+        {
+            public string rally_id;
+            public int origin_x;
+            public int origin_y;
+            public int destination_x;
+            public int destination_y;
+            public int troop_count;
+            public string status;
+            public string departure_time;
+            public string arrival_time;
+        }
+        [Serializable] private sealed class AllianceStructureRows { public AllianceStructureCloudState[] items; }
+        [Serializable] private sealed class RallyRows { public RallyCloudState[] items; }
+        [Serializable] private sealed class PlaceStructureRequest { public string p_structure_type; public int p_x; public int p_y; }
+        [Serializable] private sealed class CreateRallyRequest { public int p_target_x; public int p_target_y; public string p_target_type; public int p_troop_count; }
+        [Serializable] private sealed class JoinRallyRequest { public string p_rally_id; public int p_troop_count; }
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSceneLoad)]
         private static void Install()
@@ -382,6 +424,59 @@ namespace FrostboundFrontier
             request.SetRequestHeader("Prefer", "return=minimal");
             yield return request.SendWebRequest();
             if (IsSuccess(request)) onSuccess?.Invoke(); else onError?.Invoke("Ayudar " + request.responseCode + ": " + SafeError(request));
+        }
+
+        public IEnumerator FetchAllianceStructures(int minX, int maxX, int minY, int maxY, Action<AllianceStructureCloudState[]> onSuccess, Action<string> onError)
+        {
+            if (!HasSession) { onError?.Invoke("Sin sesión de Supabase"); yield break; }
+            string path = "/rest/v1/frostbound_alliance_structures?select=id,alliance_id,structure_type,x,y,status,territory_radius,created_by,updated_at" +
+                "&status=eq.Active&x=gte." + minX + "&x=lte." + maxX + "&y=gte." + minY + "&y=lte." + maxY + "&order=x.asc,y.asc";
+            using UnityWebRequest request = CreateRequest(path, UnityWebRequest.kHttpVerbGET, null, true);
+            yield return request.SendWebRequest();
+            if (!IsSuccess(request)) { onError?.Invoke("Territorio " + request.responseCode + ": " + SafeError(request)); yield break; }
+            AllianceStructureRows rows = ParseArray<AllianceStructureRows>(request.downloadHandler.text);
+            onSuccess?.Invoke(rows?.items ?? Array.Empty<AllianceStructureCloudState>());
+        }
+
+        public IEnumerator PlaceAllianceStructure(string structureType, int x, int y, Action<AllianceStructureCloudState> onSuccess, Action<string> onError)
+        {
+            if (!HasSession) { onError?.Invoke("Sin sesión de Supabase"); yield break; }
+            PlaceStructureRequest payload = new PlaceStructureRequest { p_structure_type = structureType, p_x = x, p_y = y };
+            using UnityWebRequest request = CreateRequest("/rest/v1/rpc/frostbound_place_alliance_structure", UnityWebRequest.kHttpVerbPOST, JsonUtility.ToJson(payload), true);
+            yield return request.SendWebRequest();
+            if (IsSuccess(request)) onSuccess?.Invoke(JsonUtility.FromJson<AllianceStructureCloudState>(request.downloadHandler.text));
+            else onError?.Invoke("Colocar HQ " + request.responseCode + ": " + SafeError(request));
+        }
+
+        public IEnumerator FetchAllianceRallies(Action<RallyCloudState[]> onSuccess, Action<string> onError)
+        {
+            if (!HasSession) { onError?.Invoke("Sin sesión de Supabase"); yield break; }
+            string path = "/rest/v1/frostbound_rallies?select=id,alliance_id,leader_id,target_x,target_y,target_type,status,rally_starts_at&status=eq.Forming&order=rally_starts_at.asc&limit=12";
+            using UnityWebRequest request = CreateRequest(path, UnityWebRequest.kHttpVerbGET, null, true);
+            yield return request.SendWebRequest();
+            if (!IsSuccess(request)) { onError?.Invoke("Rallies " + request.responseCode + ": " + SafeError(request)); yield break; }
+            RallyRows rows = ParseArray<RallyRows>(request.downloadHandler.text);
+            onSuccess?.Invoke(rows?.items ?? Array.Empty<RallyCloudState>());
+        }
+
+        public IEnumerator CreateAllianceRally(int x, int y, string targetType, int troopCount, Action<RallyCloudState> onSuccess, Action<string> onError)
+        {
+            if (!HasSession) { onError?.Invoke("Sin sesión de Supabase"); yield break; }
+            CreateRallyRequest payload = new CreateRallyRequest { p_target_x = x, p_target_y = y, p_target_type = targetType, p_troop_count = troopCount };
+            using UnityWebRequest request = CreateRequest("/rest/v1/rpc/frostbound_create_rally", UnityWebRequest.kHttpVerbPOST, JsonUtility.ToJson(payload), true);
+            yield return request.SendWebRequest();
+            if (IsSuccess(request)) onSuccess?.Invoke(JsonUtility.FromJson<RallyCloudState>(request.downloadHandler.text));
+            else onError?.Invoke("Crear rally " + request.responseCode + ": " + SafeError(request));
+        }
+
+        public IEnumerator JoinAllianceRally(string rallyId, int troopCount, Action<RallyJoinCloudState> onSuccess, Action<string> onError)
+        {
+            if (!HasSession) { onError?.Invoke("Sin sesión de Supabase"); yield break; }
+            JoinRallyRequest payload = new JoinRallyRequest { p_rally_id = rallyId, p_troop_count = troopCount };
+            using UnityWebRequest request = CreateRequest("/rest/v1/rpc/frostbound_join_rally", UnityWebRequest.kHttpVerbPOST, JsonUtility.ToJson(payload), true);
+            yield return request.SendWebRequest();
+            if (IsSuccess(request)) onSuccess?.Invoke(JsonUtility.FromJson<RallyJoinCloudState>(request.downloadHandler.text));
+            else onError?.Invoke("Unirse al rally " + request.responseCode + ": " + SafeError(request));
         }
 
         public IEnumerator FetchResearch(Action<ResearchCloudState[]> onSuccess, Action<string> onError)
