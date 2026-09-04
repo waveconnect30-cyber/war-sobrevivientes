@@ -260,6 +260,14 @@ namespace FrostboundFrontier
         [Serializable] private sealed class IdRequest { public string p_quest_id; public string p_achievement_id; public string p_mail_id; }
         [Serializable] private sealed class ChestRequest { public int p_milestone; }
         [Serializable] private sealed class BattleMailRequest { public string p_source_key; public string p_subject; public string p_body; }
+        [Serializable] public sealed class InventoryRow { public string item_id; public int quantity; public string updated_at; }
+        [Serializable] public sealed class ShopRow { public string item_id; public string display_name; public string category; public int honor_cost; public int quantity_per_purchase; }
+        [Serializable] public sealed class ItemActionResult { public string item_id; public int quantity; public int honor_points; public int seconds_applied; public string target_type; public int donated; public string resource; }
+        [Serializable] private sealed class InventoryRows { public InventoryRow[] items; }
+        [Serializable] private sealed class ShopRows { public ShopRow[] items; }
+        [Serializable] private sealed class ItemRequest { public string p_item_id; public string p_target_type; public string p_target_key; }
+        [Serializable] private sealed class BuyItemRequest { public string p_item_id; }
+        [Serializable] private sealed class DonationRequest { public string p_resource; public int p_amount; }
         [Serializable] private sealed class AllianceStructureRows { public AllianceStructureCloudState[] items; }
         [Serializable] private sealed class RallyRows { public RallyCloudState[] items; }
         [Serializable] private sealed class PlaceStructureRequest { public string p_structure_type; public int p_x; public int p_y; }
@@ -635,6 +643,33 @@ namespace FrostboundFrontier
             yield return request.SendWebRequest();
             if (IsSuccess(request)) onSuccess?.Invoke();
             else onError?.Invoke(rpc + " " + request.responseCode + ": " + SafeError(request));
+        }
+
+        public IEnumerator FetchInventory(Action<InventoryRow[]> onSuccess, Action<string> onError)
+        {
+            if (!HasSession) { onError?.Invoke("Sin sesión de Supabase"); yield break; }
+            using UnityWebRequest request=CreateRequest("/rest/v1/frostbound_inventory?select=item_id,quantity,updated_at&quantity=gt.0&order=item_id",UnityWebRequest.kHttpVerbGET,null,true);
+            yield return request.SendWebRequest();
+            if(IsSuccess(request)) onSuccess?.Invoke(ParseArray<InventoryRows>(request.downloadHandler.text)?.items??Array.Empty<InventoryRow>()); else onError?.Invoke("Inventario "+request.responseCode+": "+SafeError(request));
+        }
+
+        public IEnumerator FetchAllianceShop(Action<ShopRow[]> onSuccess,Action<string> onError)
+        {
+            if (!HasSession) { onError?.Invoke("Sin sesión de Supabase"); yield break; }
+            using UnityWebRequest request=CreateRequest("/rest/v1/frostbound_alliance_shop?select=item_id,display_name,category,honor_cost,quantity_per_purchase&active=is.true&order=honor_cost",UnityWebRequest.kHttpVerbGET,null,true);
+            yield return request.SendWebRequest();
+            if(IsSuccess(request)) onSuccess?.Invoke(ParseArray<ShopRows>(request.downloadHandler.text)?.items??Array.Empty<ShopRow>()); else onError?.Invoke("Tienda "+request.responseCode+": "+SafeError(request));
+        }
+
+        public IEnumerator FetchHonor(Action<ItemActionResult> onSuccess,Action<string> onError) => CallItemRpc("frostbound_get_my_honor","{}",onSuccess,onError);
+        public IEnumerator BuyAllianceItem(string itemId,Action<ItemActionResult> onSuccess,Action<string> onError) => CallItemRpc("frostbound_buy_alliance_item",JsonUtility.ToJson(new BuyItemRequest{p_item_id=itemId}),onSuccess,onError);
+        public IEnumerator UseInventoryItem(string itemId,string targetType,string targetKey,Action<ItemActionResult> onSuccess,Action<string> onError) => CallItemRpc("frostbound_use_item",JsonUtility.ToJson(new ItemRequest{p_item_id=itemId,p_target_type=targetType,p_target_key=targetKey}),onSuccess,onError);
+        public IEnumerator DonateAllianceResource(string resource,int amount,Action<ItemActionResult> onSuccess,Action<string> onError) => CallItemRpc("frostbound_donate_alliance_technology",JsonUtility.ToJson(new DonationRequest{p_resource=resource,p_amount=amount}),onSuccess,onError);
+        private IEnumerator CallItemRpc(string rpc,string json,Action<ItemActionResult> onSuccess,Action<string> onError)
+        {
+            if(!HasSession){onError?.Invoke("Sin sesión de Supabase");yield break;}
+            using UnityWebRequest request=CreateRequest("/rest/v1/rpc/"+rpc,UnityWebRequest.kHttpVerbPOST,json,true); yield return request.SendWebRequest();
+            if(IsSuccess(request))onSuccess?.Invoke(JsonUtility.FromJson<ItemActionResult>(request.downloadHandler.text));else onError?.Invoke(rpc+" "+request.responseCode+": "+SafeError(request));
         }
 
         public IEnumerator FetchResearch(Action<ResearchCloudState[]> onSuccess, Action<string> onError)

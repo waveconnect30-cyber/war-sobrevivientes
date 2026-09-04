@@ -89,7 +89,7 @@ namespace FrostboundFrontier
             float height = Screen.height / scale;
             GUI.depth = -30;
 
-            if (!AllianceManager.IsPanelOpen && !ResearchManager.IsPanelOpen && !questsOpen && !mailOpen)
+            if (!AllianceManager.IsPanelOpen && !ResearchManager.IsPanelOpen && !InventoryShopManager.IsPanelOpen && !questsOpen && !mailOpen)
             {
                 if (GUI.Button(new Rect(292f, 148f, 150f, 40f), "MISIONES", buttonStyle)) { questsOpen = true; RefreshAll(); }
                 if (GUI.Button(new Rect(450f, 148f, 150f, 40f), "BUZON", buttonStyle)) { mailOpen = true; LoadMail("Battle"); }

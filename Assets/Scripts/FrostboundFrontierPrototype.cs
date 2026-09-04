@@ -118,6 +118,15 @@ namespace FrostboundFrontier
         public int WoundedInfantry => state != null ? state.woundedInfantry : 0;
         public bool ElenaUnlocked => state == null || state.elenaUnlocked;
         public string ElenaHeroId => state != null ? state.elenaHeroId : string.Empty;
+        public bool HasActiveTraining => state != null && state.trainingAmount > 0 && state.trainingEndsUtcTicks > DateTime.UtcNow.Ticks;
+        public bool HasActiveUpgrade => state != null && !string.IsNullOrEmpty(state.upgradingBuilding) && state.upgradeEndsUtcTicks > DateTime.UtcNow.Ticks;
+        public string ActiveUpgradeSlot => HasActiveUpgrade ? state.upgradingBuilding + "_01" : string.Empty;
+        public void ApplyTrainingSpeedup(int seconds)
+        {
+            if (!HasActiveTraining || seconds <= 0) return;
+            state.trainingEndsUtcTicks = Math.Max(DateTime.UtcNow.Ticks, state.trainingEndsUtcTicks - TimeSpan.FromSeconds(seconds).Ticks);
+            CompleteTrainingIfReady(); Save(); ShowToast("Acelerador aplicado al entrenamiento");
+        }
         public int Crystals => state != null ? state.crystals : 0;
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
@@ -354,7 +363,7 @@ namespace FrostboundFrontier
             DrawResource(new Rect(width - 370f, 27f, 145f, 38f), "COMIDA", state.food, new Color(0.48f, 0.82f, 0.4f));
             DrawResource(new Rect(width - 210f, 27f, 150f, 38f), "LIBRES", AvailableWorkers(), new Color(0.45f, 0.78f, 1f));
 
-            if (AllianceManager.IsPanelOpen || ResearchManager.IsPanelOpen || QuestMailManager.IsPanelOpen)
+            if (AllianceManager.IsPanelOpen || ResearchManager.IsPanelOpen || QuestMailManager.IsPanelOpen || InventoryShopManager.IsPanelOpen)
             {
                 GUI.matrix = oldMatrix;
                 return;

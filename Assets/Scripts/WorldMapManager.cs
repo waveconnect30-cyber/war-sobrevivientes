@@ -1098,7 +1098,7 @@ namespace FrostboundFrontier
         {
             GUI.depth = 100;
             EnsureStyles();
-            if (AllianceManager.IsPanelOpen || ResearchManager.IsPanelOpen || QuestMailManager.IsPanelOpen) return;
+            if (AllianceManager.IsPanelOpen || ResearchManager.IsPanelOpen || QuestMailManager.IsPanelOpen || InventoryShopManager.IsPanelOpen) return;
             float scale = Mathf.Clamp(Screen.width / 1280f, 0.75f, 1.35f);
             Matrix4x4 previousMatrix = GUI.matrix;
             GUI.matrix = Matrix4x4.TRS(Vector3.zero, Quaternion.identity, Vector3.one * scale);

@@ -62,6 +62,8 @@ namespace FrostboundFrontier
         }
 
         public void OpenPanel() { panelOpen=true; }
+        public string ActiveTechId => ActiveResearch()?.tech_id ?? string.Empty;
+        public void RefreshFromCloud() { Refresh(); }
 
         private static int LevelOf(string id) => Levels.TryGetValue(id, out int value) ? value : 0;
         private SupabaseSyncClient.ResearchCloudState ActiveResearch()
@@ -103,7 +105,7 @@ namespace FrostboundFrontier
 
         private void OnGUI()
         {
-            if (AllianceManager.IsPanelOpen || QuestMailManager.IsPanelOpen) return;
+            if (AllianceManager.IsPanelOpen || QuestMailManager.IsPanelOpen || InventoryShopManager.IsPanelOpen) return;
             EnsureStyles(); GUI.depth=-200;
             float scale=Mathf.Clamp(Screen.width/1280f,.75f,1.35f); Matrix4x4 old=GUI.matrix;
             GUI.matrix=Matrix4x4.TRS(Vector3.zero,Quaternion.identity,Vector3.one*scale);

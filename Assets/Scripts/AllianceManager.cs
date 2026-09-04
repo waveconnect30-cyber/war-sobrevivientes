@@ -116,7 +116,7 @@ namespace FrostboundFrontier
 
         private void OnGUI()
         {
-            if (ResearchManager.IsPanelOpen || QuestMailManager.IsPanelOpen) return;
+            if (ResearchManager.IsPanelOpen || QuestMailManager.IsPanelOpen || InventoryShopManager.IsPanelOpen) return;
             EnsureStyles();
             int previousDepth = GUI.depth;
             GUI.depth = 100;
