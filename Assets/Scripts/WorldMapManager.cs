@@ -65,6 +65,8 @@ namespace FrostboundFrontier
             public string resourceType;
             public int payloadAmount;
             public string marchKind;
+            public string beastKind;
+            public int beastLevel;
             public int troopCount;
             public bool victory;
             public int casualties;
@@ -793,7 +795,8 @@ namespace FrostboundFrontier
             {
                 id = Guid.NewGuid().ToString(), originX = city.x, originY = city.y,
                 targetX = selectedCoordinate.x, targetY = selectedCoordinate.y,
-                marchKind = "Attack", troopCount = troopsToSend, resourceType = null, payloadAmount = 0,
+                marchKind = "Attack", beastKind = beast.data.beast_kind, beastLevel = beast.data.level,
+                troopCount = troopsToSend, resourceType = null, payloadAmount = 0,
                 heroId = assignElena ? prototype.ElenaHeroId : null, heroKey = assignElena ? "elena_ice_huntress" : null,
                 heroPowerBonus = assignElena ? 0.15f : 0f, heroSpeedBonus = assignElena ? 0.20f : 0f,
                 status = "Marching", phaseStartedTicks = DateTime.UtcNow.Ticks,
@@ -891,6 +894,8 @@ namespace FrostboundFrontier
             march.lootType = result.loot_type;
             march.lootAmount = result.loot_amount;
             prototype.ApplyBattleOutcome(result.casualties, result.wounded, result.loot_type, result.loot_amount);
+            if (result.victory && march.beastLevel == 1 && (string.IsNullOrEmpty(march.beastKind) || march.beastKind.IndexOf("Wolf", StringComparison.OrdinalIgnoreCase) >= 0 || march.beastKind.IndexOf("Lobo", StringComparison.OrdinalIgnoreCase) >= 0))
+                OnboardingManager.Notify("BeastDefeated");
             float distance = Vector2.Distance(new Vector2(march.originX, march.originY), new Vector2(march.targetX, march.targetY));
             march.status = "Return";
             march.phaseStartedTicks = DateTime.UtcNow.Ticks;

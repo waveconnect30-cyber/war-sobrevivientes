@@ -8,6 +8,7 @@ namespace FrostboundFrontier
     {
         public static QuestMailManager Instance { get; private set; }
         public static bool IsPanelOpen => Instance != null && (Instance.questsOpen || Instance.mailOpen);
+        public bool QuestsOpen => questsOpen;
 
         private SupabaseSyncClient.QuestCloudState[] quests = Array.Empty<SupabaseSyncClient.QuestCloudState>();
         private SupabaseSyncClient.AchievementCloudState[] achievements = Array.Empty<SupabaseSyncClient.AchievementCloudState>();
@@ -16,6 +17,7 @@ namespace FrostboundFrontier
         private bool mailOpen;
         private bool showAchievements;
         private bool busy;
+        private bool claimingDailyQuest;
         private string mailCategory = "Battle";
         private string message = "Sincronizando objetivos...";
         private Vector2 scroll;
@@ -195,7 +197,7 @@ namespace FrostboundFrontier
         }
 
         private void LoadMail(string category) { mailCategory = category; scroll = Vector2.zero; RefreshAll(); }
-        private void ClaimQuest(string id) => StartReward(SupabaseSyncClient.Instance.ClaimQuest(id, RewardReceived, Error));
+        private void ClaimQuest(string id) { claimingDailyQuest = true; StartReward(SupabaseSyncClient.Instance.ClaimQuest(id, RewardReceived, Error)); }
         private void ClaimAchievement(string id) => StartReward(SupabaseSyncClient.Instance.ClaimAchievement(id, RewardReceived, Error));
         private void ClaimChest(int milestone) => StartReward(SupabaseSyncClient.Instance.ClaimDailyChest(milestone, RewardReceived, Error));
         private void ClaimAllMail() => StartReward(SupabaseSyncClient.Instance.ClaimAllMail(RewardReceived, Error));
@@ -205,10 +207,12 @@ namespace FrostboundFrontier
         {
             busy = false;
             FindAnyObjectByType<FrostboundFrontierPrototype>()?.ApplyClaimedRewards(reward.wood, reward.food, reward.crystals, reward.speedups);
+            if (claimingDailyQuest) OnboardingManager.Notify("DailyRewardClaimed");
+            claimingDailyQuest = false;
             message = "Recompensa recibida: " + RewardText(reward.wood, reward.food, reward.crystals, reward.speedups);
             RefreshAll();
         }
-        private void Error(string error) { busy = false; message = error; }
+        private void Error(string error) { busy = false; claimingDailyQuest = false; message = error; }
 
         private static string RewardText(int wood, int food, int crystals, int speedups)
         {

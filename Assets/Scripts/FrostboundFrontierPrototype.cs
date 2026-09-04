@@ -14,6 +14,7 @@ namespace FrostboundFrontier
             public int food = 140;
             public int coal = 50;
             public int generatorLevel = 1;
+            public bool generatorOn;
             public int sawmillLevel = 1;
             public int kitchenLevel = 1;
             public int barracksLevel = 1;
@@ -30,8 +31,8 @@ namespace FrostboundFrontier
             public long trainingStartedUtcTicks;
             public long trainingEndsUtcTicks;
             public int population = 6;
-            public int sawmillWorkers = 1;
-            public int kitchenWorkers = 1;
+            public int sawmillWorkers;
+            public int kitchenWorkers;
             public float temperature = 12f;
             public float populationHealth = 100f;
             public float populationHappiness = 100f;
@@ -119,6 +120,13 @@ namespace FrostboundFrontier
         public bool ElenaUnlocked => state == null || state.elenaUnlocked;
         public string ElenaHeroId => state != null ? state.elenaHeroId : string.Empty;
         public bool HasActiveTraining => state != null && state.trainingAmount > 0 && state.trainingEndsUtcTicks > DateTime.UtcNow.Ticks;
+        public bool LegacyTutorialComplete => state != null && state.tutorialComplete;
+        public bool GeneratorOn => state != null && state.generatorOn;
+
+        public void PrepareTutorialBuilding(string buildingId)
+        {
+            if (!string.IsNullOrWhiteSpace(buildingId)) selectedBuilding = buildingId;
+        }
         public bool HasActiveUpgrade => state != null && !string.IsNullOrEmpty(state.upgradingBuilding) && state.upgradeEndsUtcTicks > DateTime.UtcNow.Ticks;
         public string ActiveUpgradeSlot => HasActiveUpgrade ? state.upgradingBuilding + "_01" : string.Empty;
         public void ApplyTrainingSpeedup(int seconds)
@@ -380,6 +388,7 @@ namespace FrostboundFrontier
             int cost = 75 * level;
             GUI.Label(new Rect(width - 455f, height - 143f, 190f, 32f), "NIVEL " + level, resourceStyle);
             DrawWorkerControls(width, height);
+            DrawGeneratorControls(width, height);
             DrawUpgradeControls(width, height, cost);
             DrawTrainingControls(width, height);
             DrawHospitalControls(width, height);
@@ -421,12 +430,30 @@ namespace FrostboundFrontier
 
         private void DrawTutorial(float width)
         {
+            if (OnboardingManager.IsActive) return;
             GUI.Box(new Rect(width - 365f, 88f, 347f, 104f), GUIContent.none, bodyStyle);
             GUI.Label(new Rect(width - 350f, 96f, 315f, 28f), state.tutorialComplete ? "MISIÓN COMPLETADA" : "MISIÓN INICIAL", state.tutorialComplete ? resourceStyle : titleStyle);
             string objective = state.tutorialComplete
                 ? "+150 madera  +100 comida recibidos"
                 : "Mejora el Generador térmico a nivel 2";
             GUI.Label(new Rect(width - 350f, 128f, 315f, 50f), objective, bodyStyle);
+        }
+
+        private void DrawGeneratorControls(float width, float height)
+        {
+            if (selectedBuilding != "generator") return;
+            Rect button = new Rect(width - 455f, height - 136f, 190f, 58f);
+            if (!state.generatorOn)
+            {
+                if (GUI.Button(button, "ENCENDER\nGENERADOR", buttonStyle))
+                {
+                    state.generatorOn = true;
+                    Save();
+                    ShowToast("Generador Térmico encendido");
+                    OnboardingManager.Notify("GeneratorOn");
+                }
+            }
+            else GUI.Label(button, "GENERADOR ENCENDIDO", resourceStyle);
         }
 
         private void DrawWorkerControls(float width, float height)
@@ -496,6 +523,7 @@ namespace FrostboundFrontier
             state.trainingEndsUtcTicks = 0;
             Save();
             QuestMailManager.Instance?.RecordProgress("TrainTroops", completed);
+            OnboardingManager.Notify("TroopsTrained");
             ShowToast(completed + " Infantería de Nieve lista");
         }
 
@@ -661,7 +689,7 @@ namespace FrostboundFrontier
         private void SimulateSecond()
         {
             int fuelCost = Mathf.Max(1, state.generatorLevel);
-            bool generatorFueled = state.wood >= fuelCost;
+            bool generatorFueled = state.generatorOn && state.wood >= fuelCost;
             if (generatorFueled)
             {
                 state.wood -= fuelCost;
@@ -713,6 +741,7 @@ namespace FrostboundFrontier
             if (buildingId == "sawmill") state.sawmillWorkers = current;
             else state.kitchenWorkers = current;
             Save();
+            if (buildingId == "sawmill" && delta > 0) OnboardingManager.Notify("WorkerAssigned");
         }
 
         private int AvailableWorkers() => Mathf.Max(0, state.population - state.sawmillWorkers - state.kitchenWorkers);
@@ -852,6 +881,7 @@ namespace FrostboundFrontier
                 state.populationHealth = 100f;
                 state.populationHappiness = 100f;
             }
+            if (state.tutorialComplete) state.generatorOn = true;
             state.sawmillWorkers = Mathf.Clamp(state.sawmillWorkers, 0, state.population);
             state.kitchenWorkers = Mathf.Clamp(state.kitchenWorkers, 0, state.population - state.sawmillWorkers);
         }

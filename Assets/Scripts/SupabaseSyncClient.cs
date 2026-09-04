@@ -264,6 +264,8 @@ namespace FrostboundFrontier
         [Serializable] public sealed class ShopRow { public string item_id; public string display_name; public string category; public int honor_cost; public int quantity_per_purchase; }
         [Serializable] public sealed class ItemActionResult { public string item_id; public int quantity; public int honor_points; public int seconds_applied; public string target_type; public int donated; public string resource; public string peace_shield_until; }
         [Serializable] public sealed class CityAttackResult { public bool victory; public int attacker_power; public int defender_power; public int attacker_casualties; public int defender_casualties; public int defender_wounded; public int loot_wood; public int loot_food; public int loot_coal; public int city_health; public bool burning; public bool relocated; public int new_x; public int new_y; }
+        [Serializable] public sealed class TutorialProgressState { public string user_id; public int step; public bool completed; public string updated_at; }
+        [Serializable] private sealed class TutorialProgressRows { public TutorialProgressState[] items; }
         [Serializable] private sealed class InventoryRows { public InventoryRow[] items; }
         [Serializable] private sealed class ShopRows { public ShopRow[] items; }
         [Serializable] private sealed class ItemRequest { public string p_item_id; public string p_target_type; public string p_target_key; }
@@ -325,6 +327,25 @@ namespace FrostboundFrontier
             yield return request.SendWebRequest();
             if (IsSuccess(request)) onSuccess?.Invoke(request.downloadHandler.text);
             else onError?.Invoke("Mapa remoto: " + request.responseCode);
+        }
+
+        public IEnumerator FetchTutorialProgress(Action<TutorialProgressState> onSuccess, Action<string> onError)
+        {
+            if (!HasSession) { onError?.Invoke("Sin sesión de Supabase"); yield break; }
+            using UnityWebRequest request = CreateRequest("/rest/v1/frostbound_tutorial_progress?select=user_id,step,completed,updated_at&user_id=eq." + userId + "&limit=1", UnityWebRequest.kHttpVerbGET, null, true);
+            yield return request.SendWebRequest();
+            if (!IsSuccess(request)) { onError?.Invoke("Tutorial " + request.responseCode + ": " + SafeError(request)); yield break; }
+            TutorialProgressRows rows = ParseArray<TutorialProgressRows>(request.downloadHandler.text);
+            onSuccess?.Invoke(rows?.items != null && rows.items.Length > 0 ? rows.items[0] : null);
+        }
+
+        public IEnumerator SaveTutorialProgress(int step, bool completed, Action onSuccess = null, Action<string> onError = null)
+        {
+            if (!HasSession) { onError?.Invoke("Sin sesión de Supabase"); yield break; }
+            TutorialProgressState payload = new TutorialProgressState { user_id = userId, step = Mathf.Clamp(step, 0, 5), completed = completed, updated_at = DateTime.UtcNow.ToString("O") };
+            using UnityWebRequest request = CreateUpsert("/rest/v1/frostbound_tutorial_progress?on_conflict=user_id", JsonUtility.ToJson(payload));
+            yield return request.SendWebRequest();
+            if (IsSuccess(request)) onSuccess?.Invoke(); else onError?.Invoke("Tutorial " + request.responseCode + ": " + SafeError(request));
         }
 
         public IEnumerator RelocateWorldCity(int targetX, int targetY, Action onSuccess, Action<string> onError)
