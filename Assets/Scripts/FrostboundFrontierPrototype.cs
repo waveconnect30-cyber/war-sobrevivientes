@@ -908,6 +908,11 @@ namespace FrostboundFrontier
             ShowToast("Recompensa acreditada");
         }
 
+        public void ApplyCityAttackOutcome(int casualties,int wood,int food,int coal)
+        {
+            if(state==null)return;state.snowInfantry=Mathf.Max(0,state.snowInfantry-Mathf.Max(0,casualties));state.wood+=Mathf.Max(0,wood);state.food+=Mathf.Max(0,food);state.coal+=Mathf.Max(0,coal);Save();ShowToast("La marcha PVP regresó con el saqueo");
+        }
+
         public void ApplyHeroCloudState(SupabaseSyncClient.HeroCloudState hero)
         {
             if (hero == null) return;

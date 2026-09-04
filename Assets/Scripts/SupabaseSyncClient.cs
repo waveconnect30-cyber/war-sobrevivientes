@@ -262,7 +262,8 @@ namespace FrostboundFrontier
         [Serializable] private sealed class BattleMailRequest { public string p_source_key; public string p_subject; public string p_body; }
         [Serializable] public sealed class InventoryRow { public string item_id; public int quantity; public string updated_at; }
         [Serializable] public sealed class ShopRow { public string item_id; public string display_name; public string category; public int honor_cost; public int quantity_per_purchase; }
-        [Serializable] public sealed class ItemActionResult { public string item_id; public int quantity; public int honor_points; public int seconds_applied; public string target_type; public int donated; public string resource; }
+        [Serializable] public sealed class ItemActionResult { public string item_id; public int quantity; public int honor_points; public int seconds_applied; public string target_type; public int donated; public string resource; public string peace_shield_until; }
+        [Serializable] public sealed class CityAttackResult { public bool victory; public int attacker_power; public int defender_power; public int attacker_casualties; public int defender_casualties; public int defender_wounded; public int loot_wood; public int loot_food; public int loot_coal; public int city_health; public bool burning; public bool relocated; public int new_x; public int new_y; }
         [Serializable] private sealed class InventoryRows { public InventoryRow[] items; }
         [Serializable] private sealed class ShopRows { public ShopRow[] items; }
         [Serializable] private sealed class ItemRequest { public string p_item_id; public string p_target_type; public string p_target_key; }
@@ -317,7 +318,7 @@ namespace FrostboundFrontier
                 yield break;
             }
 
-            string path = "/rest/v1/frostbound_world_tiles?select=id,x,y,tile_type,occupant_id,level,res_type,res_capacity,res_remaining,beast_kind,beast_power,beast_hp,beast_max_hp,reward_type,reward_amount,facility_key,facility_power,owner_alliance_id,buff_type,buff_percent,updated_at" +
+            string path = "/rest/v1/frostbound_world_tiles?select=id,x,y,tile_type,occupant_id,level,res_type,res_capacity,res_remaining,beast_kind,beast_power,beast_hp,beast_max_hp,reward_type,reward_amount,facility_key,facility_power,owner_alliance_id,buff_type,buff_percent,peace_shield_until,city_health,burning_until,updated_at" +
                 "&x=gte." + minX + "&x=lte." + maxX + "&y=gte." + minY + "&y=lte." + maxY +
                 "&order=x.asc,y.asc";
             using UnityWebRequest request = CreateRequest(path, UnityWebRequest.kHttpVerbGET, null, true);
@@ -380,6 +381,13 @@ namespace FrostboundFrontier
             yield return request.SendWebRequest();
             if (IsSuccess(request)) onSuccess?.Invoke(JsonUtility.FromJson<BeastBattleResult>(request.downloadHandler.text));
             else onError?.Invoke("Batalla PVE " + request.responseCode + ": " + SafeError(request));
+        }
+
+        public IEnumerator ProcessCityAttack(string marchId,Action<CityAttackResult> onSuccess,Action<string> onError)
+        {
+            if(!HasSession){onError?.Invoke("Sin sesión de Supabase");yield break;}
+            using UnityWebRequest request=CreateRequest("/rest/v1/rpc/frostbound_process_city_attack",UnityWebRequest.kHttpVerbPOST,"{\"p_march_id\":\""+marchId+"\"}",true);yield return request.SendWebRequest();
+            if(IsSuccess(request))onSuccess?.Invoke(JsonUtility.FromJson<CityAttackResult>(request.downloadHandler.text));else onError?.Invoke("Ataque PVP "+request.responseCode+": "+SafeError(request));
         }
 
         public IEnumerator InitializeHito6(Action<HeroCloudState> onSuccess, Action<string> onError)

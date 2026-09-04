@@ -39,6 +39,9 @@ namespace FrostboundFrontier
             public string owner_alliance_id;
             public string buff_type;
             public float buff_percent;
+            public string peace_shield_until;
+            public int city_health;
+            public string burning_until;
             public string updated_at;
         }
         [Serializable] private sealed class WorldTileRows { public WorldTileRow[] items; }
@@ -626,8 +629,21 @@ namespace FrostboundFrontier
             float size = visual.data.tile_type == "Fortress" ? 0.85f : 0.58f;
             marker.transform.localScale = new Vector3(size, visual.data.tile_type == "PlayerCity" ? 2.2f : 1.35f, size);
             marker.GetComponent<Renderer>().sharedMaterial = MaterialFor(visual.data.tile_type);
+            if (visual.data.tile_type == "PlayerCity")
+            {
+                if (IsFuture(visual.data.peace_shield_until))
+                {
+                    GameObject dome=GameObject.CreatePrimitive(PrimitiveType.Sphere);dome.name="Peace Shield";dome.transform.SetParent(marker.transform,false);dome.transform.localPosition=Vector3.zero;dome.transform.localScale=new Vector3(2.1f,1.15f,2.1f);dome.GetComponent<Renderer>().sharedMaterial=resourceMaterial;Destroy(dome.GetComponent<Collider>());
+                }
+                if (IsFuture(visual.data.burning_until))
+                {
+                    GameObject fire=GameObject.CreatePrimitive(PrimitiveType.Sphere);fire.name="City Fire";fire.transform.SetParent(marker.transform,false);fire.transform.localPosition=new Vector3(0,.7f,0);fire.transform.localScale=Vector3.one*.45f;fire.GetComponent<Renderer>().sharedMaterial=beastMaterial;Destroy(fire.GetComponent<Collider>());
+                }
+            }
             visual.marker = marker;
         }
+
+        private static bool IsFuture(string value)=>!string.IsNullOrWhiteSpace(value)&&DateTime.TryParse(value,out DateTime date)&&date.ToUniversalTime()>DateTime.UtcNow;
 
         private Material MaterialFor(string type)
         {
@@ -695,6 +711,15 @@ namespace FrostboundFrontier
             actionMessageUntil = Time.unscaledTime + 3f;
         }
 
+        private void StartCityMarch(TileVisual city)
+        {
+            if(activeMarch!=null||city?.data==null||city.data.tile_type!="PlayerCity")return;
+            if(city.data.occupant_id==SupabaseSyncClient.Instance?.CurrentUserId){actionMessage="ESTA ES TU CIUDAD";actionMessageUntil=Time.unscaledTime+3;return;}
+            if(IsFuture(city.data.peace_shield_until)){actionMessage="CIUDAD PROTEGIDA POR ESCUDO";actionMessageUntil=Time.unscaledTime+3;return;}
+            int available=prototype.SnowInfantry;if(available<=0){actionMessage="NECESITAS INFANTERÍA";actionMessageUntil=Time.unscaledTime+3;return;}troopsToSend=Mathf.Clamp(troopsToSend,1,available);Vector2Int origin=GetCityCoordinate();float seconds=Mathf.Max(2f,Vector2.Distance(origin,selectedCoordinate)*MarchSecondsPerTile*ResearchManager.MarchDurationMultiplier);
+            activeMarch=new LocalMarch{id=Guid.NewGuid().ToString(),originX=origin.x,originY=origin.y,targetX=selectedCoordinate.x,targetY=selectedCoordinate.y,marchKind="CityAttack",troopCount=troopsToSend,heroId=assignElena?prototype.ElenaHeroId:null,heroKey=assignElena?"elena_ice_huntress":null,heroPowerBonus=assignElena ? .15f : 0f,heroSpeedBonus=assignElena ? .20f : 0f,status="Marching",phaseStartedTicks=DateTime.UtcNow.Ticks,phaseEndsTicks=DateTime.UtcNow.AddSeconds(seconds).Ticks};SaveActiveMarch();ClearSelection();actionMessage="MARCHA PVP EN CAMINO · "+Mathf.CeilToInt(seconds)+" S";actionMessageUntil=Time.unscaledTime+3;
+        }
+
         private void UpdateMarch()
         {
             if (activeMarch == null) return;
@@ -715,16 +740,21 @@ namespace FrostboundFrontier
 
             if (activeMarch.status == "Marching")
             {
-                if (activeMarch.marchKind == "Attack")
+                if (activeMarch.marchKind == "Attack" || activeMarch.marchKind == "CityAttack")
                 {
                     activeMarch.status = "Battle";
-                    SaveActiveMarch();
                     LocalMarch battleMarch = activeMarch;
                     SupabaseSyncClient cloud = SupabaseSyncClient.Instance;
                     if (cloud != null && cloud.CanQueryWorld)
-                        StartCoroutine(cloud.ProcessBeastBattle(battleMarch.id,
-                            result => BeginBattleReturn(battleMarch, result),
-                            error => { Debug.LogWarning(error); actionMessage = "ERROR EN BATALLA PVE"; actionMessageUntil = Time.unscaledTime + 4f; }));
+                    {
+                        if(battleMarch.marchKind=="CityAttack")SaveActiveMarch(()=>StartCoroutine(cloud.ProcessCityAttack(battleMarch.id,result=>BeginCityBattleReturn(battleMarch,result),error=>CancelFailedCityAttack(battleMarch,error))));
+                        else {SaveActiveMarch();StartCoroutine(cloud.ProcessBeastBattle(battleMarch.id,result => BeginBattleReturn(battleMarch, result),error => { Debug.LogWarning(error); actionMessage = "ERROR EN BATALLA PVE"; actionMessageUntil = Time.unscaledTime + 4f; }));}
+                    }
+                    else if (battleMarch.marchKind == "CityAttack")
+                    {
+                        CancelFailedCityAttack(battleMarch, "PVP_REQUIRES_CONNECTION");
+                        return;
+                    }
                     activeMarch.phaseEndsTicks = DateTime.UtcNow.AddYears(1).Ticks;
                     return;
                 }
@@ -746,7 +776,7 @@ namespace FrostboundFrontier
             }
             else
             {
-                if (activeMarch.marchKind == "Attack") { FinishBattleMarch(activeMarch); return; }
+                if (activeMarch.marchKind == "Attack" || activeMarch.marchKind == "CityAttack") { FinishBattleMarch(activeMarch); return; }
                 SupabaseSyncClient cloud = SupabaseSyncClient.Instance;
                 LocalMarch completedMarch = activeMarch;
                 if (cloud != null && cloud.CanQueryWorld)
@@ -774,11 +804,33 @@ namespace FrostboundFrontier
             SaveActiveMarch();
         }
 
+        private void BeginCityBattleReturn(LocalMarch march,SupabaseSyncClient.CityAttackResult result)
+        {
+            if(activeMarch!=march||result==null)return;march.victory=result.victory;march.casualties=result.attacker_casualties;march.lootType="recursos";march.lootAmount=result.loot_wood+result.loot_food+result.loot_coal;
+            battleReportBody="Poder atacante: "+result.attacker_power+" · Defensa: "+result.defender_power+"\nBajas: "+result.attacker_casualties+"\nSaqueo: "+result.loot_wood+" madera, "+result.loot_food+" comida, "+result.loot_coal+" carbón\nSalud ciudad: "+result.city_health+(result.relocated?" · REUBICADA":"");prototype.ApplyCityAttackOutcome(result.attacker_casualties,result.loot_wood,result.loot_food,result.loot_coal);
+            float d=Vector2.Distance(new Vector2(march.originX,march.originY),new Vector2(march.targetX,march.targetY));march.status="Return";march.phaseStartedTicks=DateTime.UtcNow.Ticks;march.phaseEndsTicks=DateTime.UtcNow.AddSeconds(Mathf.Max(2f,d*MarchSecondsPerTile*(1f-march.heroSpeedBonus)*ResearchManager.MarchDurationMultiplier)).Ticks;SaveActiveMarch();loadedChunk=new Vector2Int(int.MinValue,int.MinValue);
+        }
+
+        private void CancelFailedCityAttack(LocalMarch march, string error)
+        {
+            Debug.LogWarning(error);
+            if (activeMarch != march) return;
+            actionMessage = error.Contains("PEACE_SHIELD_ACTIVE")
+                ? "ATAQUE CANCELADO: ESCUDO ACTIVO"
+                : error.Contains("PVP_REQUIRES_CONNECTION") ? "PVP REQUIERE CONEXIÓN" : "ATAQUE PVP CANCELADO";
+            actionMessageUntil = Time.unscaledTime + 4f;
+            activeMarch = null;
+            PlayerPrefs.DeleteKey("frostbound-active-march");
+            if (marchVisual != null) marchVisual.SetActive(false);
+            loadedChunk = new Vector2Int(int.MinValue, int.MinValue);
+            RefreshChunkIfNeeded();
+        }
+
         private void FinishBattleMarch(LocalMarch march)
         {
             if (activeMarch != march) return;
             battleReportTitle = march.victory ? "VICTORIA" : "DERROTA";
-            battleReportBody = "Tropas enviadas: " + march.troopCount + "\nBajas: " + march.casualties +
+            if(march.marchKind!="CityAttack")battleReportBody = "Tropas enviadas: " + march.troopCount + "\nBajas: " + march.casualties +
                 "   Heridos: " + march.wounded + "\nBotín: " + (march.lootAmount > 0 ? march.lootAmount + " " + RewardLabel(march.lootType) : "Ninguno");
             battleReportOpen = true;
             QuestMailManager.Instance?.AddBattleReport("beast_" + march.id, "Combate PVE: " + battleReportTitle, battleReportBody);
@@ -813,7 +865,7 @@ namespace FrostboundFrontier
             Destroy(marchVisual.GetComponent<Collider>());
         }
 
-        private void SaveActiveMarch()
+        private void SaveActiveMarch(Action onSaved=null)
         {
             if (activeMarch == null) return;
             PlayerPrefs.SetString("frostbound-active-march", JsonUtility.ToJson(activeMarch));
@@ -824,7 +876,7 @@ namespace FrostboundFrontier
             {
                 id = activeMarch.id, origin_x = activeMarch.originX, origin_y = activeMarch.originY,
                 target_x = activeMarch.targetX, target_y = activeMarch.targetY,
-                march_type = activeMarch.status == "Return" || activeMarch.status == "Completed" ? "Return" : activeMarch.marchKind,
+                march_type = activeMarch.status == "Return" || activeMarch.status == "Completed" ? "Return" : activeMarch.marchKind == "CityAttack" ? "Attack" : activeMarch.marchKind,
                 res_type = activeMarch.resourceType, payload_amount = activeMarch.payloadAmount,
                 troop_count = activeMarch.troopCount,
                 hero_id = activeMarch.heroId, hero_key = activeMarch.heroKey,
@@ -832,7 +884,7 @@ namespace FrostboundFrontier
                 departure_time = new DateTime(activeMarch.phaseStartedTicks, DateTimeKind.Utc).ToString("O"),
                 arrival_time = new DateTime(activeMarch.phaseEndsTicks, DateTimeKind.Utc).ToString("O"), status = activeMarch.status
             };
-            StartCoroutine(cloud.SaveMarch(payload, null, error => Debug.LogWarning(error)));
+            StartCoroutine(cloud.SaveMarch(payload, onSaved, error => Debug.LogWarning(error)));
         }
 
         private void LoadLocalMarch()
@@ -1243,7 +1295,7 @@ namespace FrostboundFrontier
                 visual.data.occupant_id == SupabaseSyncClient.Instance?.CurrentUserId ? "Tu colonia" : "Otro superviviente";
 
             bool rallyTarget = type == "Fortress" || (type == "Beast" && level >= 2);
-            float panelHeight = type == "ResourceNode" || type == "Beast" ? 452f : 344f;
+            float panelHeight = type == "ResourceNode" || type == "Beast" || type == "PlayerCity" ? 452f : 344f;
             Rect panel = new Rect(width * 0.5f - 245f, 98f, 490f, panelHeight);
             Event guiEvent = Event.current;
             bool pointerInsidePanel = panel.Contains(guiEvent.mousePosition);
@@ -1265,10 +1317,10 @@ namespace FrostboundFrontier
                 : type == "Fortress" ? "GUARNICIÓN  " + visual.data.facility_power + " PODER  ·  NIVEL " + level + "\n" +
                     (string.IsNullOrEmpty(visual.data.owner_alliance_id) ? "NEUTRAL" : "CONQUISTADA") + "  ·  BUFF +" + visual.data.buff_percent + "% " +
                     (visual.data.buff_type == "AllianceAttack" ? "ATAQUE" : "PRODUCCIÓN")
-                : "OCUPADO POR  " + occupant + "  ·  NIVEL " + level, cardBodyStyle);
+                : "OCUPADO POR  " + occupant + "  ·  NIVEL " + level + "\nSALUD " + visual.data.city_health + "%  ·  " + (IsFuture(visual.data.peace_shield_until) ? "ESCUDO ACTIVO" : IsFuture(visual.data.burning_until) ? "EN LLAMAS" : "SIN PROTECCIÓN"), cardBodyStyle);
 
             float actionY = panel.y + 266f;
-            if (type == "ResourceNode" || type == "Beast")
+            if (type == "ResourceNode" || type == "Beast" || type == "PlayerCity")
             {
                 int available = Mathf.Max(0, prototype.SnowInfantry);
                 troopsToSend = Mathf.Clamp(troopsToSend, 1, Mathf.Max(1, available));
@@ -1301,6 +1353,7 @@ namespace FrostboundFrontier
             {
                 if (type == "ResourceNode") StartGatheringMarch(visual);
                 else if (type == "Beast") StartBeastMarch(visual);
+                else if (type == "PlayerCity") StartCityMarch(visual);
                 else
                 {
                     actionMessage = action + " · sector " + selectedCoordinate.x + "," + selectedCoordinate.y + " preparado";
