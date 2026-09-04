@@ -677,6 +677,29 @@ namespace FrostboundFrontier
             Sprite nodeSprite = FrostboundVisualTheme.NodeSprite(visual.data.tile_type, visual.data.res_type);
             Renderer meshRenderer = marker.GetComponent<Renderer>();
             SpriteRenderer spriteRenderer = marker.GetComponentInChildren<SpriteRenderer>(true);
+            Transform cityModel = marker.transform.Find("Meshy City World");
+            if (visual.data.tile_type == "PlayerCity")
+            {
+                if (cityModel == null)
+                {
+                    GameObject prefab = Resources.Load<GameObject>("World/MeshyCity_World");
+                    if (prefab != null)
+                    {
+                        GameObject model = Instantiate(prefab, marker.transform);
+                        model.name = "Meshy City World";
+                        model.transform.localPosition = Vector3.zero;
+                        model.transform.localRotation = Quaternion.identity;
+                        cityModel = model.transform;
+                    }
+                }
+                if (cityModel != null)
+                {
+                    cityModel.gameObject.SetActive(true);
+                    marker.transform.localScale = Vector3.one;
+                    if (meshRenderer != null) meshRenderer.enabled = false;
+                }
+            }
+            else if (cityModel != null) cityModel.gameObject.SetActive(false);
             if (nodeSprite != null)
             {
                 if (spriteRenderer == null)
@@ -701,7 +724,7 @@ namespace FrostboundFrontier
             else
             {
                 if (spriteRenderer != null) spriteRenderer.enabled = false;
-                if (meshRenderer != null) meshRenderer.enabled = true;
+                if (meshRenderer != null) meshRenderer.enabled = visual.data.tile_type != "PlayerCity" || cityModel == null;
             }
             marker.GetComponent<Renderer>().sharedMaterial = MaterialFor(visual.data.tile_type);
             if (detailed && visual.data.tile_type == "PlayerCity")
