@@ -98,10 +98,13 @@ namespace FrostboundFrontier
             Rect target = TargetRect(width, height);
             bool block = target.width > 0f;
             if (block) DrawBlockingShade(width, height, target);
-            Rect message = new Rect(width * .5f - 310f, 90f, 620f, 92f);
+            bool besideWorldActions = step == 3 && WorldMapManager.IsSelectionPanelOpen;
+            Rect message = besideWorldActions
+                ? new Rect(24f, 104f, Mathf.Min(350f, width * .3f), 124f)
+                : new Rect(width * .5f - 310f, 90f, 620f, 92f);
             GUI.Box(message, GUIContent.none, cardStyle);
             GUI.Label(new Rect(message.x + 18f, message.y + 9f, message.width - 36f, 30f), "TUTORIAL " + (step + 1) + " / 5", titleStyle);
-            GUI.Label(new Rect(message.x + 18f, message.y + 42f, message.width - 36f, 40f), Instruction(), bodyStyle);
+            GUI.Label(new Rect(message.x + 18f, message.y + 42f, message.width - 36f, message.height - 50f), Instruction(), bodyStyle);
             if (block) GUI.Label(new Rect(target.center.x - 34f, target.y - 46f, 68f, 44f), "▼", pointerStyle);
             GUI.matrix = old;
         }

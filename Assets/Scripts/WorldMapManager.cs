@@ -83,6 +83,7 @@ namespace FrostboundFrontier
         }
 
         public static bool IsWorldMapActive { get; private set; }
+        public static bool IsSelectionPanelOpen { get; private set; }
 
         private readonly Dictionary<Vector2Int, TileVisual> visibleTiles = new Dictionary<Vector2Int, TileVisual>();
         private readonly Dictionary<PrimitiveType, GameObjectPool> markerPools = new Dictionary<PrimitiveType, GameObjectPool>();
@@ -201,6 +202,7 @@ namespace FrostboundFrontier
         private void OnDestroy()
         {
             IsWorldMapActive = false;
+            IsSelectionPanelOpen = false;
         }
 
         private void Update()
@@ -1259,6 +1261,7 @@ namespace FrostboundFrontier
 
         private void OnGUI()
         {
+            IsSelectionPanelOpen = IsWorldMapActive && selectedCoordinate.x >= 0 && !IsMaximumZoomOut && !cinematicZoomActive && !relocationMode && !alliancePlacementMode;
             GUI.depth = 100;
             EnsureStyles();
             if (AllianceManager.IsPanelOpen || ResearchManager.IsPanelOpen || QuestMailManager.IsPanelOpen || InventoryShopManager.IsPanelOpen) return;
