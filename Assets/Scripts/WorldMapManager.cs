@@ -571,29 +571,41 @@ namespace FrostboundFrontier
         private void CreateTerritoryBorder(SupabaseSyncClient.AllianceStructureCloudState row)
         {
             float radius = Mathf.Max(1, row.territory_radius) * TileSize + TileSize * .5f;
-            Vector3 center = CoordinateToWorld(row.x, row.y) + Vector3.up * .16f;
+            // Keep territory borders just above the snow, below cities and nodes.
+            Vector3 center = CoordinateToWorld(row.x, row.y) + Vector3.up * .055f;
             GameObject border = new GameObject("[" + AllianceManager.LocalTag + "] Territory " + row.x + "," + row.y);
             border.transform.SetParent(allianceTerritoryRoot.transform, false);
             LineRenderer line = border.AddComponent<LineRenderer>();
             line.loop = true;
             line.positionCount = 4;
             line.useWorldSpace = true;
-            line.widthMultiplier = .12f;
+            line.widthMultiplier = .045f;
             line.sharedMaterial = allianceTerritoryMaterial;
-            line.startColor = line.endColor = new Color(.08f, .95f, 1f, 1f);
+            line.startColor = line.endColor = new Color(.08f, .78f, .9f, .72f);
             line.SetPositions(new[] { center + new Vector3(-radius,0f,-radius), center + new Vector3(-radius,0f,radius),
                 center + new Vector3(radius,0f,radius), center + new Vector3(radius,0f,-radius) });
         }
 
         private void CreateAllianceStructureMarker(SupabaseSyncClient.AllianceStructureCloudState row)
         {
-            GameObject marker = GameObject.CreatePrimitive(row.structure_type == "HQ" ? PrimitiveType.Cylinder : PrimitiveType.Cube);
+            bool isHq = row.structure_type == "HQ";
+            GameObject marker = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
             marker.name = "Alliance " + row.structure_type + " " + row.x + "," + row.y;
             marker.transform.SetParent(allianceTerritoryRoot.transform, false);
-            marker.transform.position = CoordinateToWorld(row.x, row.y) + new Vector3(0f, 1.05f, 0f);
-            marker.transform.localScale = row.structure_type == "HQ" ? new Vector3(1.05f,.85f,1.05f) : new Vector3(.4f,1.5f,.4f);
+            marker.transform.position = CoordinateToWorld(row.x, row.y) + new Vector3(0f, isHq ? 1.05f : .72f, 0f);
+            marker.transform.localScale = isHq ? new Vector3(1.05f,.85f,1.05f) : new Vector3(.055f,.72f,.055f);
             marker.GetComponent<Renderer>().sharedMaterial = allianceTerritoryMaterial;
             Destroy(marker.GetComponent<Collider>());
+            if (!isHq)
+            {
+                GameObject banner = GameObject.CreatePrimitive(PrimitiveType.Cube);
+                banner.name = "Alliance Flag Banner";
+                banner.transform.SetParent(marker.transform, false);
+                banner.transform.localPosition = new Vector3(3.2f, .45f, 0f);
+                banner.transform.localScale = new Vector3(6.2f, .28f, .7f);
+                banner.GetComponent<Renderer>().sharedMaterial = allianceTerritoryMaterial;
+                Destroy(banner.GetComponent<Collider>());
+            }
         }
 
         private void CullAndCreate(int minX, int maxX, int minY, int maxY)
@@ -697,7 +709,8 @@ namespace FrostboundFrontier
                 ? PrimitiveType.Cube : visual.data.tile_type == "ResourceNode" ? PrimitiveType.Cylinder : PrimitiveType.Capsule;
             GameObject marker = GetMarkerPool(shape).Get(visual.root != null ? visual.root.transform : mapRoot.transform);
             marker.name = visual.data.tile_type;
-            marker.transform.position = CoordinateToWorld(visual.data.x, visual.data.y) + new Vector3(0f, detailed ? 1.6f : .32f, 0f);
+            float markerHeight = visual.data.tile_type == "PlayerCity" ? .1f : detailed ? 1.6f : .32f;
+            marker.transform.position = CoordinateToWorld(visual.data.x, visual.data.y) + Vector3.up * markerHeight;
             float size = detailed ? (visual.data.tile_type == "Fortress" ? 0.85f : 0.58f) : .22f;
             marker.transform.localScale = detailed ? new Vector3(size, visual.data.tile_type == "PlayerCity" ? 2.2f : 1.35f, size) : new Vector3(size, .08f, size);
             // Player cities use the optimized 3D LOD prefab. A HUD sprite here
@@ -1303,13 +1316,6 @@ namespace FrostboundFrontier
                 CreateHighlightBar(new Vector3(0f, 0.13f, -half), new Vector3(TileSize * 1.05f, 0.07f, 0.08f));
                 CreateHighlightBar(new Vector3(half, 0.13f, 0f), new Vector3(0.08f, 0.07f, TileSize * 1.05f));
                 CreateHighlightBar(new Vector3(-half, 0.13f, 0f), new Vector3(0.08f, 0.07f, TileSize * 1.05f));
-                GameObject glow = GameObject.CreatePrimitive(PrimitiveType.Cube);
-                glow.name = "Selection Core";
-                glow.transform.SetParent(selectionHighlight.transform, false);
-                glow.transform.localPosition = new Vector3(0f, 0.1f, 0f);
-                glow.transform.localScale = new Vector3(TileSize * 0.9f, 0.025f, TileSize * 0.9f);
-                glow.GetComponent<Renderer>().sharedMaterial = selectionMaterial;
-                Destroy(glow.GetComponent<Collider>());
             }
             selectionHighlight.transform.position = CoordinateToWorld(x, y);
             selectionHighlight.SetActive(true);

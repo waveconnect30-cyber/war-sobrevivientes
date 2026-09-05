@@ -26,13 +26,13 @@ Transform:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 2828161105666800867}
   serializedVersion: 2
-  m_LocalRotation: {x: -0.7071068, y: 0, z: 0, w: 0.7071068}
+  m_LocalRotation: {x: -0.46756876, y: -0.1816964, z: -0.029296057, w: 0.8645852}
   m_LocalPosition: {x: -0, y: 0, z: 0}
   m_LocalScale: {x: 100, y: 100.00003, z: 100.00003}
   m_ConstrainProportionsScale: 0
   m_Children: []
   m_Father: {fileID: 8233964550599160968}
-  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+  m_LocalEulerAnglesHint: {x: -55, y: -30, z: 12}
 --- !u!33 &4843685437573851614
 MeshFilter:
   m_ObjectHideFlags: 0
@@ -116,13 +116,13 @@ Transform:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 3923959931309442138}
   serializedVersion: 2
-  m_LocalRotation: {x: -0.7071068, y: 0, z: 0, w: 0.7071068}
+  m_LocalRotation: {x: -0.46756876, y: -0.1816964, z: -0.029296057, w: 0.8645852}
   m_LocalPosition: {x: -0, y: 0, z: 0}
   m_LocalScale: {x: 100, y: 100.00003, z: 100.00003}
   m_ConstrainProportionsScale: 0
   m_Children: []
   m_Father: {fileID: 6092365541179437409}
-  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+  m_LocalEulerAnglesHint: {x: -55, y: -30, z: 12}
 --- !u!33 &2896542872305935661
 MeshFilter:
   m_ObjectHideFlags: 0
@@ -229,15 +229,15 @@ LODGroup:
   m_AnimateCrossFading: 1
   m_LastLODIsBillboard: 0
   m_LODs:
-  - screenRelativeHeight: 0.12
+  - screenRelativeHeight: 0.30227715
     fadeTransitionWidth: 0
     renderers:
     - renderer: {fileID: 5259039376047313849}
-  - screenRelativeHeight: 0.025
+  - screenRelativeHeight: 0.059116244
     fadeTransitionWidth: 0
     renderers:
     - renderer: {fileID: 5891337739099380613}
-  - screenRelativeHeight: 0.003
+  - screenRelativeHeight: 0.0038052127
     fadeTransitionWidth: 0
     renderers:
     - renderer: {fileID: 6495868607452401246}
