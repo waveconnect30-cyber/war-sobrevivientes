@@ -17,7 +17,7 @@ namespace FrostboundFrontier
         private const float WorldMaxZoom = 38f;
         private const float ZoomButtonStep = 1.6f;
         private const float HighDetailZoomLimit = 14f;
-        private const float WorldCameraPitch = 52f;
+        private const float WorldCameraPitch = 50f;
         private const float WorldCameraHeight = 60f;
 
         [Serializable] private sealed class WorldTileRow
@@ -252,7 +252,7 @@ namespace FrostboundFrontier
             Vector2Int cityCoordinate = GetCityCoordinate();
             Vector3 cityWorldPosition = CoordinateToWorld(cityCoordinate.x, cityCoordinate.y);
             SetWorldCameraFocus(cityWorldPosition);
-            mapCamera.backgroundColor = new Color(0.08f, 0.14f, 0.19f);
+            mapCamera.backgroundColor = new Color32(220, 228, 232, 255);
             loadedChunk = new Vector2Int(int.MinValue, int.MinValue);
             loadedRadiusX = -1;
             loadedRadiusY = -1;
@@ -1611,9 +1611,14 @@ namespace FrostboundFrontier
 
         private void CreateMaterials()
         {
-            snowA = NewMaterial(new Color(0.68f, 0.79f, 0.84f));
-            snowB = NewMaterial(new Color(0.58f, 0.72f, 0.79f));
-            gridMaterial = NewMaterial(new Color(0.12f, 0.25f, 0.31f));
+            // Low-contrast snow palette: the small gaps between pooled tiles reveal
+            // gridMaterial as subtle grid lines without transparent-material overdraw.
+            snowA = NewMaterial(new Color32(232, 236, 239, 255)); // #E8ECEF
+            snowB = NewMaterial(new Color32(226, 231, 234, 255));
+            gridMaterial = NewMaterial(new Color32(212, 221, 226, 255));
+            PreserveSnowColor(snowA, new Color32(232, 236, 239, 255));
+            PreserveSnowColor(snowB, new Color32(226, 231, 234, 255));
+            PreserveSnowColor(gridMaterial, new Color32(212, 221, 226, 255));
             cityMaterial = NewMaterial(new Color(0.2f, 0.72f, 1f));
             resourceMaterial = NewMaterial(new Color(0.18f, 0.82f, 0.48f));
             beastMaterial = NewMaterial(new Color(0.92f, 0.27f, 0.19f));
@@ -1645,6 +1650,13 @@ namespace FrostboundFrontier
             Material material = new Material(Shader.Find("Standard"));
             material.color = color;
             return material;
+        }
+
+        private static void PreserveSnowColor(Material material, Color color)
+        {
+            material.EnableKeyword("_EMISSION");
+            material.SetColor("_EmissionColor", color * 0.7f);
+            material.SetFloat("_Glossiness", 0.12f);
         }
 
         private void EnsureStyles()
