@@ -18,7 +18,7 @@ namespace FrostboundFrontier
         private const float ZoomButtonStep = 1.6f;
         private const float HighDetailZoomLimit = 14f;
         private const float WorldCameraPitch = 50f;
-        private const float WorldCameraHeight = 60f;
+        private const float WorldCameraFov = 35f;
 
         [Serializable] private sealed class WorldTileRow
         {
@@ -94,6 +94,7 @@ namespace FrostboundFrontier
         private Camera mapCamera;
         private GameObject mapRoot;
         private GameObject worldBackdrop;
+        private GameObject worldLight;
         private GameObject allianceTerritoryRoot;
         private GameObject poolRoot;
         private GameObjectPool tilePool;
@@ -102,6 +103,8 @@ namespace FrostboundFrontier
         private Quaternion colonyCameraRotation;
         private bool colonyOrthographic;
         private float colonyFieldOfView;
+        private float colonyNearClip;
+        private float colonyFarClip;
         private Rect colonyCameraRect;
         private Vector2Int selectedCoordinate = new Vector2Int(-1, -1);
         private GameObject selectionHighlight;
@@ -112,6 +115,7 @@ namespace FrostboundFrontier
         private Vector2 pointerDown;
         private Vector3 cameraDown;
         private Vector3 worldFocusPosition;
+        private float worldZoom = WorldMinZoom;
         private bool pointerTracking;
         private float selectionInputBlockedUntil;
         private bool waitForPointerRelease;
@@ -199,6 +203,7 @@ namespace FrostboundFrontier
             allianceTerritoryRoot.transform.SetParent(mapRoot.transform, false);
             CreateMaterials();
             CreateWorldBackdrop();
+            CreateWorldLight();
             LoadLocalMarch();
         }
 
@@ -224,7 +229,7 @@ namespace FrostboundFrontier
             }
         }
 
-        private bool HighDetailActive => mapCamera != null && mapCamera.orthographicSize <= HighDetailZoomLimit;
+        private bool HighDetailActive => mapCamera != null && worldZoom <= HighDetailZoomLimit;
 
         private void ToggleWorldMap()
         {
@@ -242,12 +247,17 @@ namespace FrostboundFrontier
             colonyCameraRotation = mapCamera.transform.rotation;
             colonyOrthographic = mapCamera.orthographic;
             colonyFieldOfView = mapCamera.fieldOfView;
+            colonyNearClip = mapCamera.nearClipPlane;
+            colonyFarClip = mapCamera.farClipPlane;
             colonyCameraRect = mapCamera.rect;
             prototype.ColonyRoot.SetActive(false);
             mapRoot.SetActive(true);
             RenderSettings.fog = false;
-            mapCamera.orthographic = true;
-            mapCamera.orthographicSize = WorldMinZoom;
+            mapCamera.orthographic = false;
+            mapCamera.fieldOfView = WorldCameraFov;
+            mapCamera.nearClipPlane = 0.3f;
+            mapCamera.farClipPlane = 2000f;
+            worldZoom = WorldMinZoom;
             mapCamera.rect = new Rect(0f, 0f, 1f, 1f);
             Vector2Int cityCoordinate = GetCityCoordinate();
             Vector3 cityWorldPosition = CoordinateToWorld(cityCoordinate.x, cityCoordinate.y);
@@ -270,6 +280,8 @@ namespace FrostboundFrontier
             RenderSettings.fog = true;
             mapCamera.orthographic = colonyOrthographic;
             mapCamera.fieldOfView = colonyFieldOfView;
+            mapCamera.nearClipPlane = colonyNearClip;
+            mapCamera.farClipPlane = colonyFarClip;
             mapCamera.rect = colonyCameraRect;
             mapCamera.transform.SetPositionAndRotation(colonyCameraPosition, colonyCameraRotation);
             mapCamera.backgroundColor = new Color(0.37f, 0.5f, 0.62f);
@@ -326,14 +338,14 @@ namespace FrostboundFrontier
             if (IsWorldMapActive) RefreshChunkIfNeeded();
         }
 
-        private bool IsMaximumZoomOut => mapCamera != null && mapCamera.orthographicSize >= WorldMaxZoom - 0.25f;
+        private bool IsMaximumZoomOut => mapCamera != null && worldZoom >= WorldMaxZoom - 0.25f;
 
         private void StartCinematicZoom(Vector2Int destination)
         {
             Vector3 world = CoordinateToWorld(destination.x, destination.y);
             cinematicStartPosition = worldFocusPosition;
             cinematicTargetPosition = world;
-            cinematicStartZoom = mapCamera.orthographicSize;
+            cinematicStartZoom = worldZoom;
             cinematicTargetZoom = WorldMinZoom;
             cinematicReturnsToGlobal = false;
             cinematicZoomStartedAt = Time.unscaledTime;
@@ -349,11 +361,13 @@ namespace FrostboundFrontier
             float t = Mathf.Clamp01((Time.unscaledTime - cinematicZoomStartedAt) / duration);
             float eased = t * t * (3f - 2f * t);
             SetWorldCameraFocus(Vector3.Lerp(cinematicStartPosition, cinematicTargetPosition, eased));
-            mapCamera.orthographicSize = Mathf.Lerp(cinematicStartZoom, cinematicTargetZoom, eased);
+            worldZoom = Mathf.Lerp(cinematicStartZoom, cinematicTargetZoom, eased);
+            SetWorldCameraFocus(worldFocusPosition);
             if (t < 1f) return;
             cinematicZoomActive = false;
             SetWorldCameraFocus(cinematicTargetPosition);
-            mapCamera.orthographicSize = cinematicTargetZoom;
+            worldZoom = cinematicTargetZoom;
+            SetWorldCameraFocus(worldFocusPosition);
             if (cinematicReturnsToGlobal)
             {
                 ClearSelection();
@@ -370,7 +384,7 @@ namespace FrostboundFrontier
         {
             cinematicStartPosition = worldFocusPosition;
             cinematicTargetPosition = worldFocusPosition;
-            cinematicStartZoom = mapCamera.orthographicSize;
+            cinematicStartZoom = worldZoom;
             cinematicTargetZoom = WorldMaxZoom;
             cinematicReturnsToGlobal = true;
             cinematicZoomStartedAt = Time.unscaledTime;
@@ -423,7 +437,7 @@ namespace FrostboundFrontier
                 else
                 {
                     Vector2 delta = pointer - pointerDown;
-                    SetWorldCameraFocus(cameraDown + new Vector3(-delta.x, 0f, -delta.y) * (mapCamera.orthographicSize / 420f));
+                    SetWorldCameraFocus(cameraDown + new Vector3(-delta.x, 0f, -delta.y) * (worldZoom / 420f));
                 }
             }
             else if (pointerTracking)
@@ -441,7 +455,7 @@ namespace FrostboundFrontier
                 float previous = ((a.position - a.deltaPosition) - (b.position - b.deltaPosition)).magnitude;
                 zoom = (previous - (a.position - b.position).magnitude) * 0.02f;
             }
-            mapCamera.orthographicSize = Mathf.Clamp(mapCamera.orthographicSize + zoom, WorldMinZoom, WorldMaxZoom);
+            worldZoom = Mathf.Clamp(worldZoom + zoom, WorldMinZoom, WorldMaxZoom);
 
             Vector3 p = worldFocusPosition;
             float extent = (MapCenter - 1) * TileSize;
@@ -454,16 +468,17 @@ namespace FrostboundFrontier
         private void SetWorldCameraFocus(Vector3 focus)
         {
             worldFocusPosition = new Vector3(focus.x, 0f, focus.z);
-            float backOffset = WorldCameraHeight / Mathf.Tan(WorldCameraPitch * Mathf.Deg2Rad);
+            float distance = worldZoom / Mathf.Tan(WorldCameraFov * 0.5f * Mathf.Deg2Rad);
+            Quaternion rotation = Quaternion.Euler(WorldCameraPitch, 0f, 0f);
             mapCamera.transform.SetPositionAndRotation(
-                new Vector3(worldFocusPosition.x, WorldCameraHeight, worldFocusPosition.z - backOffset),
-                Quaternion.Euler(WorldCameraPitch, 0f, 0f));
+                worldFocusPosition - rotation * Vector3.forward * distance,
+                rotation);
         }
 
         private void UpdateDynamicCulling()
         {
-            float halfX = mapCamera.orthographicSize * mapCamera.aspect + TileSize;
-            float halfY = mapCamera.orthographicSize / Mathf.Sin(WorldCameraPitch * Mathf.Deg2Rad) + TileSize;
+            float halfX = worldZoom * mapCamera.aspect + TileSize;
+            float halfY = worldZoom / Mathf.Sin(WorldCameraPitch * Mathf.Deg2Rad) + TileSize;
             Vector3 cameraPosition = worldFocusPosition;
             foreach (TileVisual visual in visibleTiles.Values)
             {
@@ -512,8 +527,8 @@ namespace FrostboundFrontier
         {
             Vector2Int center = CameraCoordinate();
             Vector2Int chunk = new Vector2Int(center.x / ChunkSize, center.y / ChunkSize);
-            int radiusX = Mathf.Max(MinimumRadius, Mathf.CeilToInt(mapCamera.orthographicSize * mapCamera.aspect / TileSize) + 2);
-            int radiusY = Mathf.Max(MinimumRadius, Mathf.CeilToInt(mapCamera.orthographicSize / (Mathf.Sin(WorldCameraPitch * Mathf.Deg2Rad) * TileSize)) + 2);
+            int radiusX = Mathf.Max(MinimumRadius, Mathf.CeilToInt(worldZoom * mapCamera.aspect / TileSize) + 2);
+            int radiusY = Mathf.Max(MinimumRadius, Mathf.CeilToInt(worldZoom / (Mathf.Sin(WorldCameraPitch * Mathf.Deg2Rad) * TileSize)) + 2);
             bool highDetail = HighDetailActive;
             // Zooming changes the visible bounds even while the camera remains in
             // the same chunk. Rebuild when either radius changes so the detailed
@@ -1359,9 +1374,11 @@ namespace FrostboundFrontier
             GUI.Label(new Rect(38f, height - 47f, 600f, 24f), "ARRASTRAR: MOVER  ·  PINZA/RUEDA: ZOOM  ·  TOCAR: INSPECCIONAR", bodyStyle);
             GUI.Label(new Rect(width - 430f, height - 68f, 78f, 34f), "ZOOM", coordinateStyle);
             if (GUI.Button(new Rect(width - 350f, height - 71f, 42f, 42f), "−", buttonStyle))
-                mapCamera.orthographicSize = Mathf.Clamp(mapCamera.orthographicSize + ZoomButtonStep, WorldMinZoom, WorldMaxZoom);
+                worldZoom = Mathf.Clamp(worldZoom + ZoomButtonStep, WorldMinZoom, WorldMaxZoom);
+                SetWorldCameraFocus(worldFocusPosition);
             if (GUI.Button(new Rect(width - 302f, height - 71f, 42f, 42f), "+", buttonStyle))
-                mapCamera.orthographicSize = Mathf.Clamp(mapCamera.orthographicSize - ZoomButtonStep, WorldMinZoom, WorldMaxZoom);
+                worldZoom = Mathf.Clamp(worldZoom - ZoomButtonStep, WorldMinZoom, WorldMaxZoom);
+                SetWorldCameraFocus(worldFocusPosition);
             if (GUI.Button(new Rect(width - 250f, height - 71f, 210f, 42f), "‹  ASENTAMIENTO", buttonStyle)) ToggleWorldMap();
             if (!relocationMode && !IsMaximumZoomOut && !cinematicZoomActive &&
                 GUI.Button(new Rect(width - 600f, height - 71f, 158f, 42f), "VISTA GLOBAL", buttonStyle))
@@ -1645,6 +1662,21 @@ namespace FrostboundFrontier
             Destroy(worldBackdrop.GetComponent<Collider>());
         }
 
+        private void CreateWorldLight()
+        {
+            worldLight = new GameObject("World Map Soft Sun");
+            worldLight.transform.SetParent(mapRoot.transform, false);
+            worldLight.transform.rotation = Quaternion.Euler(48f, -32f, 0f);
+            Light light = worldLight.AddComponent<Light>();
+            light.type = LightType.Directional;
+            light.color = new Color(0.88f, 0.93f, 1f);
+            light.intensity = 1.05f;
+            light.shadows = LightShadows.Soft;
+            light.shadowStrength = 0.55f;
+            light.shadowBias = 0.06f;
+            light.shadowNormalBias = 0.35f;
+        }
+
         private static Material NewMaterial(Color color)
         {
             Material material = new Material(Shader.Find("Standard"));
@@ -1655,7 +1687,8 @@ namespace FrostboundFrontier
         private static void PreserveSnowColor(Material material, Color color)
         {
             material.EnableKeyword("_EMISSION");
-            material.SetColor("_EmissionColor", color * 0.7f);
+            // A small fill keeps the snow neutral while preserving readable shadows.
+            material.SetColor("_EmissionColor", color * 0.18f);
             material.SetFloat("_Glossiness", 0.12f);
         }
 
