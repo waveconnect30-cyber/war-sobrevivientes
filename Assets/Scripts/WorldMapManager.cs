@@ -731,7 +731,10 @@ namespace FrostboundFrontier
                         GameObject model = Instantiate(prefab, marker.transform);
                         model.name = "Meshy City World";
                         model.transform.localPosition = Vector3.zero;
-                        model.transform.localRotation = Quaternion.identity;
+                        // Keep the FBX platform on the X-Z ground plane and rotate
+                        // only around Y for a readable three-quarter silhouette.
+                        model.transform.localRotation = Quaternion.Euler(0f, -30f, 0f);
+                        model.transform.localScale = new Vector3(1f, 2.2f, 1f);
                         cityModel = model.transform;
                     }
                 }

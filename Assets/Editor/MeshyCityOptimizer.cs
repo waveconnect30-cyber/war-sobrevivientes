@@ -79,9 +79,7 @@ namespace FrostboundFrontier.EditorTools
                 -sourceBounds.center.z * normalizedScale);
             high.transform.localScale = medium.transform.localScale = modelScale;
             high.transform.localPosition = medium.transform.localPosition = groundedPosition;
-            // Author-approved world-map presentation angle. Keep it stable when
-            // regenerating the optimized prefab from the original FBX.
-            high.transform.localRotation = medium.transform.localRotation = Quaternion.Euler(-55f, -30f, 12f);
+            high.transform.localRotation = medium.transform.localRotation = Quaternion.identity;
 
             List<Renderer> lod0 = BuildLevel(instance, high.transform, .006f, "LOD0", cityMaterial);
             List<Renderer> lod1 = BuildLevel(instance, medium.transform, .035f, "LOD1", cityMaterial);
