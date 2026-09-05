@@ -79,7 +79,7 @@ namespace FrostboundFrontier.EditorTools
                 -sourceBounds.center.z * normalizedScale);
             high.transform.localScale = medium.transform.localScale = modelScale;
             high.transform.localPosition = medium.transform.localPosition = groundedPosition;
-            high.transform.localRotation = medium.transform.localRotation = Quaternion.Euler(18f, 25f, 0f);
+            high.transform.localRotation = medium.transform.localRotation = Quaternion.identity;
 
             List<Renderer> lod0 = BuildLevel(instance, high.transform, .006f, "LOD0", cityMaterial);
             List<Renderer> lod1 = BuildLevel(instance, medium.transform, .035f, "LOD1", cityMaterial);

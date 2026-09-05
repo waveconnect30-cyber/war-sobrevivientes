@@ -17,6 +17,8 @@ namespace FrostboundFrontier
         private const float WorldMaxZoom = 38f;
         private const float ZoomButtonStep = 1.6f;
         private const float HighDetailZoomLimit = 14f;
+        private const float WorldCameraPitch = 52f;
+        private const float WorldCameraHeight = 60f;
 
         [Serializable] private sealed class WorldTileRow
         {
@@ -109,6 +111,7 @@ namespace FrostboundFrontier
         private bool loadedHighDetail;
         private Vector2 pointerDown;
         private Vector3 cameraDown;
+        private Vector3 worldFocusPosition;
         private bool pointerTracking;
         private float selectionInputBlockedUntil;
         private bool waitForPointerRelease;
@@ -248,9 +251,7 @@ namespace FrostboundFrontier
             mapCamera.rect = new Rect(0f, 0f, 1f, 1f);
             Vector2Int cityCoordinate = GetCityCoordinate();
             Vector3 cityWorldPosition = CoordinateToWorld(cityCoordinate.x, cityCoordinate.y);
-            mapCamera.transform.SetPositionAndRotation(
-                new Vector3(cityWorldPosition.x, 60f, cityWorldPosition.z),
-                Quaternion.Euler(90f, 0f, 0f));
+            SetWorldCameraFocus(cityWorldPosition);
             mapCamera.backgroundColor = new Color(0.08f, 0.14f, 0.19f);
             loadedChunk = new Vector2Int(int.MinValue, int.MinValue);
             loadedRadiusX = -1;
@@ -330,8 +331,8 @@ namespace FrostboundFrontier
         private void StartCinematicZoom(Vector2Int destination)
         {
             Vector3 world = CoordinateToWorld(destination.x, destination.y);
-            cinematicStartPosition = mapCamera.transform.position;
-            cinematicTargetPosition = new Vector3(world.x, 60f, world.z);
+            cinematicStartPosition = worldFocusPosition;
+            cinematicTargetPosition = world;
             cinematicStartZoom = mapCamera.orthographicSize;
             cinematicTargetZoom = WorldMinZoom;
             cinematicReturnsToGlobal = false;
@@ -347,11 +348,11 @@ namespace FrostboundFrontier
             const float duration = 1.65f;
             float t = Mathf.Clamp01((Time.unscaledTime - cinematicZoomStartedAt) / duration);
             float eased = t * t * (3f - 2f * t);
-            mapCamera.transform.position = Vector3.Lerp(cinematicStartPosition, cinematicTargetPosition, eased);
+            SetWorldCameraFocus(Vector3.Lerp(cinematicStartPosition, cinematicTargetPosition, eased));
             mapCamera.orthographicSize = Mathf.Lerp(cinematicStartZoom, cinematicTargetZoom, eased);
             if (t < 1f) return;
             cinematicZoomActive = false;
-            mapCamera.transform.position = cinematicTargetPosition;
+            SetWorldCameraFocus(cinematicTargetPosition);
             mapCamera.orthographicSize = cinematicTargetZoom;
             if (cinematicReturnsToGlobal)
             {
@@ -367,8 +368,8 @@ namespace FrostboundFrontier
 
         private void StartGlobalView()
         {
-            cinematicStartPosition = mapCamera.transform.position;
-            cinematicTargetPosition = mapCamera.transform.position;
+            cinematicStartPosition = worldFocusPosition;
+            cinematicTargetPosition = worldFocusPosition;
             cinematicStartZoom = mapCamera.orthographicSize;
             cinematicTargetZoom = WorldMaxZoom;
             cinematicReturnsToGlobal = true;
@@ -381,7 +382,8 @@ namespace FrostboundFrontier
         {
             float keyboardX = Input.GetAxisRaw("Horizontal");
             float keyboardY = Input.GetAxisRaw("Vertical");
-            mapCamera.transform.position += new Vector3(keyboardX, 0f, keyboardY) * (12f * Time.unscaledDeltaTime);
+            worldFocusPosition += new Vector3(keyboardX, 0f, keyboardY) * (12f * Time.unscaledDeltaTime);
+            SetWorldCameraFocus(worldFocusPosition);
 
             Vector2 pointer = Input.touchCount > 0 ? Input.GetTouch(0).position : (Vector2)Input.mousePosition;
             bool pressed = Input.touchCount == 1 || Input.GetMouseButton(0);
@@ -416,12 +418,12 @@ namespace FrostboundFrontier
                 {
                     pointerTracking = true;
                     pointerDown = pointer;
-                    cameraDown = mapCamera.transform.position;
+                    cameraDown = worldFocusPosition;
                 }
                 else
                 {
                     Vector2 delta = pointer - pointerDown;
-                    mapCamera.transform.position = cameraDown + new Vector3(-delta.x, 0f, -delta.y) * (mapCamera.orthographicSize / 420f);
+                    SetWorldCameraFocus(cameraDown + new Vector3(-delta.x, 0f, -delta.y) * (mapCamera.orthographicSize / 420f));
                 }
             }
             else if (pointerTracking)
@@ -441,19 +443,28 @@ namespace FrostboundFrontier
             }
             mapCamera.orthographicSize = Mathf.Clamp(mapCamera.orthographicSize + zoom, WorldMinZoom, WorldMaxZoom);
 
-            Vector3 p = mapCamera.transform.position;
+            Vector3 p = worldFocusPosition;
             float extent = (MapCenter - 1) * TileSize;
             p.x = Mathf.Clamp(p.x, -extent, extent);
             p.z = Mathf.Clamp(p.z, -extent, extent);
-            p.y = 60f;
-            mapCamera.transform.position = p;
+            p.y = 0f;
+            SetWorldCameraFocus(p);
+        }
+
+        private void SetWorldCameraFocus(Vector3 focus)
+        {
+            worldFocusPosition = new Vector3(focus.x, 0f, focus.z);
+            float backOffset = WorldCameraHeight / Mathf.Tan(WorldCameraPitch * Mathf.Deg2Rad);
+            mapCamera.transform.SetPositionAndRotation(
+                new Vector3(worldFocusPosition.x, WorldCameraHeight, worldFocusPosition.z - backOffset),
+                Quaternion.Euler(WorldCameraPitch, 0f, 0f));
         }
 
         private void UpdateDynamicCulling()
         {
             float halfX = mapCamera.orthographicSize * mapCamera.aspect + TileSize;
-            float halfY = mapCamera.orthographicSize + TileSize;
-            Vector3 cameraPosition = mapCamera.transform.position;
+            float halfY = mapCamera.orthographicSize / Mathf.Sin(WorldCameraPitch * Mathf.Deg2Rad) + TileSize;
+            Vector3 cameraPosition = worldFocusPosition;
             foreach (TileVisual visual in visibleTiles.Values)
             {
                 Vector3 position = CoordinateToWorld(visual.data.x, visual.data.y);
@@ -502,7 +513,7 @@ namespace FrostboundFrontier
             Vector2Int center = CameraCoordinate();
             Vector2Int chunk = new Vector2Int(center.x / ChunkSize, center.y / ChunkSize);
             int radiusX = Mathf.Max(MinimumRadius, Mathf.CeilToInt(mapCamera.orthographicSize * mapCamera.aspect / TileSize) + 2);
-            int radiusY = Mathf.Max(MinimumRadius, Mathf.CeilToInt(mapCamera.orthographicSize / TileSize) + 2);
+            int radiusY = Mathf.Max(MinimumRadius, Mathf.CeilToInt(mapCamera.orthographicSize / (Mathf.Sin(WorldCameraPitch * Mathf.Deg2Rad) * TileSize)) + 2);
             bool highDetail = HighDetailActive;
             // Zooming changes the visible bounds even while the camera remains in
             // the same chunk. Rebuild when either radius changes so the detailed
@@ -674,7 +685,11 @@ namespace FrostboundFrontier
             marker.transform.position = CoordinateToWorld(visual.data.x, visual.data.y) + new Vector3(0f, detailed ? 1.6f : .32f, 0f);
             float size = detailed ? (visual.data.tile_type == "Fortress" ? 0.85f : 0.58f) : .22f;
             marker.transform.localScale = detailed ? new Vector3(size, visual.data.tile_type == "PlayerCity" ? 2.2f : 1.35f, size) : new Vector3(size, .08f, size);
-            Sprite nodeSprite = FrostboundVisualTheme.NodeSprite(visual.data.tile_type, visual.data.res_type);
+            // Player cities use the optimized 3D LOD prefab. A HUD sprite here
+            // would overlap it and make the city look like a flat green marker.
+            Sprite nodeSprite = visual.data.tile_type == "PlayerCity"
+                ? null
+                : FrostboundVisualTheme.NodeSprite(visual.data.tile_type, visual.data.res_type);
             Renderer meshRenderer = marker.GetComponent<Renderer>();
             SpriteRenderer spriteRenderer = marker.GetComponentInChildren<SpriteRenderer>(true);
             Transform cityModel = marker.transform.Find("Meshy City World");
@@ -1306,8 +1321,8 @@ namespace FrostboundFrontier
         private Vector2Int CameraCoordinate()
         {
             return new Vector2Int(
-                Mathf.Clamp(Mathf.RoundToInt(mapCamera.transform.position.x / TileSize) + MapCenter, 0, MapSize - 1),
-                Mathf.Clamp(Mathf.RoundToInt(mapCamera.transform.position.z / TileSize) + MapCenter, 0, MapSize - 1));
+                Mathf.Clamp(Mathf.RoundToInt(worldFocusPosition.x / TileSize) + MapCenter, 0, MapSize - 1),
+                Mathf.Clamp(Mathf.RoundToInt(worldFocusPosition.z / TileSize) + MapCenter, 0, MapSize - 1));
         }
 
         private static Vector3 CoordinateToWorld(int x, int y) => new Vector3((x - MapCenter) * TileSize, 0f, (y - MapCenter) * TileSize);
@@ -1458,10 +1473,16 @@ namespace FrostboundFrontier
         private void DrawSelectionPanel(float width, float height)
         {
             visibleTiles.TryGetValue(selectedCoordinate, out TileVisual visual);
-            string type = visual?.data?.tile_type ?? "Empty";
-            int level = visual?.data?.level ?? 1;
-            string occupant = string.IsNullOrWhiteSpace(visual?.data?.occupant_id) ? "Ninguno" :
-                visual.data.occupant_id == SupabaseSyncClient.Instance?.CurrentUserId ? "Tu colonia" : "Otro superviviente";
+            WorldTileRow data = visual?.data;
+            if (data == null)
+            {
+                ClearSelection();
+                return;
+            }
+            string type = data.tile_type ?? "Empty";
+            int level = data.level;
+            string occupant = string.IsNullOrWhiteSpace(data.occupant_id) ? "Ninguno" :
+                data.occupant_id == SupabaseSyncClient.Instance?.CurrentUserId ? "Tu colonia" : "Otro superviviente";
 
             bool rallyTarget = type == "Fortress" || (type == "Beast" && level >= 2);
             float panelHeight = type == "ResourceNode" || type == "Beast" || type == "PlayerCity" ? 452f : 344f;
